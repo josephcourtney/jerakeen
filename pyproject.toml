@@ -1,0 +1,200 @@
+# =================================== project ====================================
+[project]
+  name = "jerakeen"
+  version = "0.9.2"
+  description = "Python client and CLI for Atuin's local daemon gRPC interface."
+  readme = "README.md"
+  authors = [
+    { name = "Joseph M Courtney", email = "5942706+josephcourtney@users.noreply.github.com" },
+  ]
+  urls = { Homepage = "https://github.com/josephcourtney/jerakeen", "Bug Tracker" = "https://github.com/josephcourtney/jerakeen/issues" }
+  license = "GPL-3.0-only"
+  license-files = ["LICENSE*"]
+  requires-python = ">=3.13"
+  classifiers = [
+  ]
+  dependencies = [
+      "grpcio>=1.83.0",
+      "protobuf>=5.26",
+]
+
+  [project.scripts]
+  jerakeen = "jerakeen.cli:main"
+
+[dependency-groups]
+  dev = [
+    "grpcio-tools>=1.83.0",
+    "rust-just>=1.43.0",
+    "pytest>=9.0.1",
+    "pytest-randomly>=4.0.1",
+    "coverage>=7.12.0",
+    "pytest-cov>=7.0.0",
+    "hypothesis>=6.138.7",
+    "mutmut>=3.3.1; python_version < \"3.14\"",
+    "ruff>=0.14.5",
+    "ty>=0.0.1a26",
+    "vulture>=2.14",
+    "grimp>=3.14",
+    "pytest-testmon>=2.2.0",
+    "watchdog>=6.0.0",
+    "radon>=6.0.1",
+    "import-linter>=2.9",
+    "mkdocs>=1.6.1",
+    "mkdocs-material>=9.7.1",
+    "showcov>=0.2.0",
+    "pip-audit>=2.10.0",
+]
+
+# =================================== build ====================================
+[build-system]
+  requires      = ["uv_build>=0.10,<0.13"]
+  build-backend = "uv_build"
+
+[tool.uv]
+  [tool.uv.sources]
+    showcov                      = { git = "https://github.com/josephcourtney/showcov.git", rev = "main" }
+
+
+
+# ==================================== lint ====================================
+[tool.ruff]
+  extend-exclude = ["src/jerakeen/_proto"]
+
+  extend = "./ruff.default.toml"
+
+  [tool.ruff.lint]
+    ignore = [
+      "D",
+      "TD002",  # Missing author in TODO; try: `# TODO(<author_name>): ...` or `# TODO @<author_name>: ...`
+      "TD003",  # Missing issue link for this TODO
+      "FIX002", # Line contains TODO, consider resolving the issue
+    ]
+    [tool.ruff.lint.per-file-ignores]
+      "packages/core/src/cv2.pyi" = [
+        "N802", # OpenCV API uses non-PEP8 function/method names.
+        "N803", # OpenCV API uses non-PEP8 argument names.
+      ]
+      "tests/**/*" = [
+        "ANN",     # Type annotations
+        "S101",    # Use of `assert` detected
+        "SLF001",  # Private member accessed
+        "PLR2004", # Magic value used in comparison, consider replacing with a constant variable
+        "ARG001",  # Unused function argument
+        "ARG002",  # Unused method argument
+        "ARG005",  # Unused lambda argument
+        "PLC0415", # `import` should be at the top-level of a file
+        "PLC2701", #  Private name import from external module
+        "INP001",  # File is part of an implicit namespace package
+        "PLC1901", # `r.stderr.strip() != ""` can be simplified to `r.stderr.strip()` as an empty string is falsey
+      ]
+
+      [tool.ruff.lint.extend-per-file-ignores]
+        "tests/**/*.py" = [
+          "E402",
+          "PLR6301",
+          "hardcoded-temp-file", # Probable insecure usage of temporary file or directory: "/tmp"
+        ]
+
+        "src/jerakeen/_interfaces.py" = ["N802"]
+
+        "tests/test_control.py" = ["N802"]
+        "tests/test_history.py" = ["N802"]
+        "tests/test_search.py" = ["N802"]
+        "tests/test_semantic.py" = ["N802"]
+
+
+[tool.ty.src]
+  include = ["src", "tests"]
+  exclude = ["src/jerakeen/_proto"]
+
+# =================================== test ===================================
+[tool.pytest.ini_options]
+  minversion = "9.0"
+  testpaths = ["tests"]
+  addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "-ra",
+    "--import-mode=importlib",
+    "--cov=jerakeen",
+    "--cov-branch",
+    "--cov-report=",
+  ]
+  xfail_strict = true
+
+  log_cli             = true
+  log_cli_level       = "INFO"
+  log_cli_format      = "%(asctime)s [%(levelname)s] %(name)s - %(message)s"
+  log_cli_date_format = "%Y-%m-%d %H:%M:%S"
+
+  norecursedirs = [
+    ".hypothesis",
+    ".git",
+    ".tox",
+    ".venv",
+    "dist",
+    "build",
+    ".pytest_cache",
+    ".eggs",
+    ".uv",
+  ]
+
+  filterwarnings = [
+    "error::DeprecationWarning:jerakeen\\.",
+    "ignore::DeprecationWarning:pkg_resources",
+    "ignore::DeprecationWarning:distutils",
+    "ignore::UserWarning:hypothesis",
+    "ignore:`use_rich_markup=` will be deprecated.*:PendingDeprecationWarning:rich_click.*",
+  ]
+
+  markers = [
+    # Structural levels
+    "unit: Fast, isolated tests of individual functions/classes. No real I/O or global state.",
+    "component: Tests of a bounded context via public APIs with in-process fakes.",
+    "integration: Tests involving real external dependencies (DB, queues, containers, external services).",
+    "system: Full system / end-to-end tests treating the app as a black box.",
+    "contract: Service/API or data/schema contract tests.",
+
+    # Purpose markers
+    "acceptance: Requirement-driven system tests tied to user stories or acceptance criteria.",
+    "regression: Prevent re-introduction of known bugs or failures.",
+    "sanity: Narrow checks verifying specific bugfixes or features.",
+    "smoke: Fast, critical-path tests run before larger suites.",
+    "performance: Performance tests (latency, throughput, resource usage).",
+    "performance_regression: Tests comparing runtime metrics to stored baselines.",
+    "security: Security-focused tests.",
+    "fuzz: Fuzzing-style tests feeding malformed/randomized inputs.",
+    "chaos: Chaos/resilience tests injecting faults or disruptions.",
+    "privacy: Privacy-impact tests ensuring correct PII/data handling.",
+    "data_quality: Tests of data integrity, freshness, referential integrity, etc.",
+    "drift: Model/data drift detection tests (PSI, KS, etc.).",
+    "usability: Automated usability tests (accessibility, i18n).",
+    "synthetic_monitoring: Synthetic production probes.",
+
+    # Technique / infra markers
+    "snapshot: Snapshot-based tests.",
+    "property_based: Property-based tests (Hypothesis).",
+    "mutation: Mutation-testing related.",
+    "observability: Tests asserting presence/shape of logs/metrics/traces.",
+
+    # Operational/meta
+    "slow: Known slow tests.",
+    "flaky: Known flaky tests under triage.",
+    "legacy: Legacy tests awaiting refactor/removal.",
+    "experimental: Experimental tests or tooling not yet mandatory.",
+    "external_data: Tests requiring external vendor data (skip if vendor fixtures are absent).",
+
+    # Domain-specific
+    "db: Database behavior tests.",
+    "api: API-centric tests (HTTP/RPC).",
+    "ml: ML-related tests.",
+    "ui: UI-layer tests (web, CLI).",
+  ]
+  python_files = ["test_*.py"]
+
+# =================================== test:coverage ===================================
+[tool.coverage.run]
+  source         = ["jerakeen"]
+  branch         = true
+  parallel       = true
+  dynamic_context = "test_function"
