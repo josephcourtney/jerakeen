@@ -64,13 +64,17 @@ class SemanticClient:
         )
         if not reply.found:
             return None
+
+        lines = tuple(
+            OutputLine(line_number=line.line_number, content=line.content) for line in reply.lines
+        )
+        text = reply.output or "\n".join(line.content for line in lines)
+
         return CommandOutput(
-            text=reply.output,
+            text=text,
             total_bytes=reply.total_bytes,
             total_lines=reply.total_lines,
-            lines=tuple(
-                OutputLine(line_number=line.line_number, content=line.content) for line in reply.lines
-            ),
+            lines=lines,
             truncated=reply.output_truncated,
             observed_bytes=reply.output_observed_bytes,
         )
