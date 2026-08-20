@@ -38,10 +38,10 @@ class SemanticTests(unittest.IsolatedAsyncioTestCase):
         self.stub = FakeSemanticStub()
         self.client = SemanticClient(self.stub)
 
-    async def test_output_found_with_ranges_lines_and_truncation(self) -> None:
+    async def test_output_reconstructs_text_from_lines_for_atuin_18_19(self) -> None:
         self.stub.command_output_reply = semantic_pb2.CommandOutputReply(
             found=True,
-            output="line 2\nline 3",
+            output="",
             total_bytes=999,
             total_lines=50,
             lines=[
@@ -57,18 +57,41 @@ class SemanticTests(unittest.IsolatedAsyncioTestCase):
             ranges=[(0, 10), slice(20, 30), slice(40, 50, 1)],
         )
         assert output is not None
-        assert output is not None
         assert output.text == "line 2\nline 3"
         assert output.total_bytes == 999
         assert output.total_lines == 50
-        assert [(line.line_number, line.content) for line in output.lines] == [(2, "line 2"), (3, "line 3")]
+        assert [(line.line_number, line.content) for line in output.lines] == [
+            (2, "line 2"),
+            (3, "line 3"),
+        ]
         assert output.truncated
         assert output.observed_bytes == 1234
 
         request = self.stub.command_output_request
         assert request is not None
         assert request.history_id == "history-id"
-        assert [(value.start, value.end) for value in request.ranges] == [(0, 10), (20, 30), (40, 50)]
+        assert [(value.start, value.end) for value in request.ranges] == [
+            (0, 10),
+            (20, 30),
+            (40, 50),
+        ]
+
+    async def test_output_preserves_nonempty_output_field_for_compatibility(self) -> None:
+        self.stub.command_output_reply = semantic_pb2.CommandOutputReply(
+            found=True,
+            output="legacy output",
+            total_bytes=13,
+            total_lines=1,
+            lines=[semantic_pb2.OutputLine(line_number=1, content="line representation")],
+        )
+
+        output = await self.client.output("history-id")
+
+        assert output is not None
+        assert output.text == "legacy output"
+        assert [(line.line_number, line.content) for line in output.lines] == [
+            (1, "line representation")
+        ]
 
     async def test_output_not_found_returns_none(self) -> None:
         self.stub.command_output_reply = semantic_pb2.CommandOutputReply(found=False)
