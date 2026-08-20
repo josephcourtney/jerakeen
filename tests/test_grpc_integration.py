@@ -95,7 +95,7 @@ class FakeDaemonService:
         self.semantic_output_requests.append(request)
         return semantic_pb2.CommandOutputReply(
             found=True,
-            output="selected output",
+            output="",
             total_bytes=200,
             total_lines=20,
             lines=[
@@ -296,7 +296,7 @@ class GrpcIntegrationTests(unittest.IsolatedAsyncioTestCase):
             ranges=[(0, 10), slice(20, 30)],
         )
         assert output is not None
-        assert output is not None
+        assert output.text == "two\nthree"
         assert output.lines[0].line_number == 2
         assert output.truncated
         assert (
