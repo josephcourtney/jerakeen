@@ -10,7 +10,9 @@ class FakeControlStub:
     def __init__(self) -> None:
         self.requests: list[control_pb2.SendEventRequest] = []
 
-    async def SendEvent(self, request: control_pb2.SendEventRequest) -> control_pb2.SendEventResponse:
+    async def SendEvent(
+        self, request: control_pb2.SendEventRequest, *, timeout: float | None = None
+    ) -> control_pb2.SendEventResponse:
         self.requests.append(request)
         return control_pb2.SendEventResponse()
 

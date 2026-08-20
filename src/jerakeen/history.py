@@ -12,6 +12,8 @@ from jerakeen._rpc import call
 from jerakeen.exceptions import AtuinProtocolError, from_grpc_error
 from jerakeen.models import (
     DaemonStatus,
+    HistoryCancel,
+    HistoryCommand,
     HistoryEnd,
     HistoryEnded,
     HistoryEventRecord,
@@ -63,11 +65,12 @@ def _event_from_proto(reply: history_pb2.TailHistoryReply) -> HistoryEventRecord
 class HistoryClient:
     """Pythonic wrapper around Atuin's History gRPC service."""
 
-    def __init__(self, stub: HistoryStub) -> None:
+    def __init__(self, stub: HistoryStub, *, timeout: float | None = 5.0) -> None:
         self._stub = stub
+        self._timeout = timeout
 
     async def status(self) -> DaemonStatus:
-        reply = await call(self._stub.Status(history_pb2.StatusRequest()))
+        reply = await call(self._stub.Status(history_pb2.StatusRequest(), timeout=self._timeout))
         return DaemonStatus(
             healthy=reply.healthy,
             version=reply.version,
@@ -98,7 +101,8 @@ class HistoryClient:
                     author=author or "",
                     intent=intent or "",
                     shell=shell or "",
-                )
+                ),
+                timeout=self._timeout,
             )
         )
         return HistoryStart(id=reply.id, version=reply.version, protocol=reply.protocol)
@@ -116,7 +120,8 @@ class HistoryClient:
                     id=history_id,
                     exit=exit_code,
                     duration=duration_ns,
-                )
+                ),
+                timeout=self._timeout,
             )
         )
         return HistoryEnd(
@@ -126,16 +131,28 @@ class HistoryClient:
             protocol=reply.protocol,
         )
 
-    async def cancel(self, history_id: str) -> None:
-        await call(self._stub.CancelHistory(history_pb2.CancelHistoryRequest(id=history_id)))
+    async def cancel(self, history_id: str) -> HistoryCancel:
+        reply = await call(
+            self._stub.CancelHistory(
+                history_pb2.CancelHistoryRequest(id=history_id),
+                timeout=self._timeout,
+            )
+        )
+        return HistoryCancel(version=reply.version, protocol=reply.protocol)
 
     async def shutdown(self) -> bool:
-        reply = await call(self._stub.Shutdown(history_pb2.ShutdownRequest()))
+        reply = await call(self._stub.Shutdown(history_pb2.ShutdownRequest(), timeout=self._timeout))
         return reply.accepted
 
-    async def tail(self) -> AsyncIterator[HistoryEventRecord]:
+    async def tail(self, *, timeout: float | None = None) -> AsyncIterator[HistoryEventRecord]:
+        """Yield live history events.
+
+        The client-wide unary RPC timeout is intentionally not applied to this long-lived
+        stream. Pass ``timeout`` only when a deadline for the entire tail stream is desired.
+        """
+
         try:
-            async for reply in self._stub.TailHistory(history_pb2.TailHistoryRequest()):
+            async for reply in self._stub.TailHistory(history_pb2.TailHistoryRequest(), timeout=timeout):
                 if not reply.HasField("history"):
                     continue
                 yield _event_from_proto(reply)
@@ -154,7 +171,14 @@ class HistoryClient:
         intent: str | None = None,
         shell: str | None = None,
         exit_code: int = 0,
-    ) -> AsyncIterator[HistoryStart]:
+    ) -> AsyncIterator[HistoryCommand]:
+        """Manage a history lifecycle around command execution.
+
+        The yielded handle starts with ``exit_code`` but callers may update
+        ``handle.exit_code`` after the command actually runs. ``duration_ns`` may likewise be
+        supplied explicitly; otherwise monotonic elapsed time is used.
+        """
+
         started_at = time.monotonic_ns()
         started = await self.start(
             command,
@@ -165,14 +189,17 @@ class HistoryClient:
             intent=intent,
             shell=shell,
         )
+        handle = HistoryCommand(start=started, exit_code=exit_code)
         try:
-            yield started
+            yield handle
         except BaseException:
             await self.cancel(started.id)
             raise
         else:
             await self.end(
                 started.id,
-                exit_code=exit_code,
-                duration_ns=time.monotonic_ns() - started_at,
+                exit_code=handle.exit_code,
+                duration_ns=(
+                    time.monotonic_ns() - started_at if handle.duration_ns is None else handle.duration_ns
+                ),
             )

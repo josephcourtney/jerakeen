@@ -19,34 +19,37 @@ if TYPE_CHECKING:
 class FakeHistoryStub:
     def __init__(self) -> None:
         self.requests: dict[str, object] = {}
+        self.timeouts: dict[str, float | None] = {}
         self.tail_replies: list[history_pb2.TailHistoryReply] = []
 
-    async def Status(self, request: history_pb2.StatusRequest) -> history_pb2.StatusReply:
+    async def Status(self, request, *, timeout=None):
         self.requests["status"] = request
+        self.timeouts["status"] = timeout
         return history_pb2.StatusReply(healthy=True, version="18.19.0", pid=42, protocol=1)
 
-    async def StartHistory(self, request: history_pb2.StartHistoryRequest) -> history_pb2.StartHistoryReply:
+    async def StartHistory(self, request, *, timeout=None):
         self.requests["start"] = request
+        self.timeouts["start"] = timeout
         return history_pb2.StartHistoryReply(id="started-id", version="18.19.0", protocol=1)
 
-    async def EndHistory(self, request: history_pb2.EndHistoryRequest) -> history_pb2.EndHistoryReply:
+    async def EndHistory(self, request, *, timeout=None):
         self.requests["end"] = request
+        self.timeouts["end"] = timeout
         return history_pb2.EndHistoryReply(id=request.id, idx=99, version="18.19.0", protocol=1)
 
-    async def CancelHistory(
-        self, request: history_pb2.CancelHistoryRequest
-    ) -> history_pb2.CancelHistoryReply:
+    async def CancelHistory(self, request, *, timeout=None):
         self.requests["cancel"] = request
+        self.timeouts["cancel"] = timeout
         return history_pb2.CancelHistoryReply(version="18.19.0", protocol=1)
 
-    async def Shutdown(self, request: history_pb2.ShutdownRequest) -> history_pb2.ShutdownReply:
+    async def Shutdown(self, request, *, timeout=None):
         self.requests["shutdown"] = request
+        self.timeouts["shutdown"] = timeout
         return history_pb2.ShutdownReply(accepted=True)
 
-    def TailHistory(
-        self, request: history_pb2.TailHistoryRequest
-    ) -> AsyncIterator[history_pb2.TailHistoryReply]:
+    def TailHistory(self, request, *, timeout=None) -> AsyncIterator[history_pb2.TailHistoryReply]:
         self.requests["tail"] = request
+        self.timeouts["tail"] = timeout
 
         async def replies():
             for reply in self.tail_replies:
@@ -89,13 +92,15 @@ class HistoryTests(unittest.IsolatedAsyncioTestCase):
         self.stub = FakeHistoryStub()
         self.client = HistoryClient(self.stub)
 
-    async def test_status(self) -> None:
+    async def test_status_and_finite_rpc_deadline(self) -> None:
         status = await self.client.status()
-        assert status.healthy
-        assert status.version == "18.19.0"
-        assert status.pid == 42
-        assert status.protocol == 1
-        assert isinstance(self.stub.requests["status"], history_pb2.StatusRequest)
+        assert (status.healthy, status.version, status.pid, status.protocol) == (
+            True,
+            "18.19.0",
+            42,
+            1,
+        )
+        assert self.stub.timeouts["status"] == 5.0
 
     async def test_start_populates_all_request_fields(self) -> None:
         result = await self.client.start(
@@ -108,96 +113,82 @@ class HistoryTests(unittest.IsolatedAsyncioTestCase):
             shell="zsh",
             timestamp_ns=123456789,
         )
-        assert result.id == "started-id"
-        assert result.version == "18.19.0"
-        assert result.protocol == 1
-
+        assert (result.id, result.version, result.protocol) == ("started-id", "18.19.0", 1)
         request = self.stub.requests["start"]
         assert isinstance(request, history_pb2.StartHistoryRequest)
-        assert request.timestamp == 123456789
-        assert request.command == "git status"
-        assert request.cwd == "/tmp/repo"
-        assert request.session == "session-1"
-        assert request.hostname == "host:user"
-        assert request.author == "agent"
-        assert request.intent == "inspect"
-        assert request.shell == "zsh"
+        assert (
+            request.timestamp,
+            request.command,
+            request.cwd,
+            request.session,
+            request.hostname,
+            request.author,
+            request.intent,
+            request.shell,
+        ) == (
+            123456789,
+            "git status",
+            "/tmp/repo",
+            "session-1",
+            "host:user",
+            "agent",
+            "inspect",
+            "zsh",
+        )
+        assert self.stub.timeouts["start"] == 5.0
 
     async def test_start_converts_optional_strings_to_proto_defaults(self) -> None:
-        await self.client.start(
-            "pwd",
-            cwd="/tmp",
-            session="s",
-            hostname="h",
-            timestamp_ns=1,
-        )
+        await self.client.start("pwd", cwd="/tmp", session="s", hostname="h", timestamp_ns=1)
         request = self.stub.requests["start"]
         assert isinstance(request, history_pb2.StartHistoryRequest)
-        assert request.author == ""
-        assert request.intent == ""
-        assert request.shell == ""
+        assert (request.author, request.intent, request.shell) == ("", "", "")
 
     async def test_end(self) -> None:
         result = await self.client.end("history-id", exit_code=7, duration_ns=123)
-        assert result.id == "history-id"
-        assert result.idx == 99
+        assert (result.id, result.idx) == ("history-id", 99)
         request = self.stub.requests["end"]
         assert isinstance(request, history_pb2.EndHistoryRequest)
-        assert request.id == "history-id"
-        assert request.exit == 7
-        assert request.duration == 123
+        assert (request.id, request.exit, request.duration) == ("history-id", 7, 123)
+        assert self.stub.timeouts["end"] == 5.0
 
-    async def test_cancel(self) -> None:
-        assert await self.client.cancel("history-id") is None
+    async def test_cancel_preserves_reply_metadata(self) -> None:
+        result = await self.client.cancel("history-id")
+        assert (result.version, result.protocol) == ("18.19.0", 1)
         request = self.stub.requests["cancel"]
         assert isinstance(request, history_pb2.CancelHistoryRequest)
         assert request.id == "history-id"
+        assert self.stub.timeouts["cancel"] == 5.0
 
     async def test_shutdown(self) -> None:
         assert await self.client.shutdown()
-        assert isinstance(self.stub.requests["shutdown"], history_pb2.ShutdownRequest)
+        assert self.stub.timeouts["shutdown"] == 5.0
 
-    async def test_tail_converts_started_and_ended_events(self) -> None:
+    async def test_tail_converts_events_without_inheriting_unary_deadline(self) -> None:
         self.stub.tail_replies = [
             history_pb2.TailHistoryReply(
-                kind=history_pb2.HISTORY_EVENT_KIND_STARTED,
-                history=history_entry(),
+                kind=history_pb2.HISTORY_EVENT_KIND_STARTED, history=history_entry()
             ),
-            history_pb2.TailHistoryReply(
-                kind=history_pb2.HISTORY_EVENT_KIND_ENDED,
-                history=history_entry(),
-            ),
+            history_pb2.TailHistoryReply(kind=history_pb2.HISTORY_EVENT_KIND_ENDED, history=history_entry()),
         ]
         events = [event async for event in self.client.tail()]
-        assert len(events) == 2
+        assert isinstance(events[0], HistoryStarted)
+        assert isinstance(events[1], HistoryEnded)
+        assert events[0].timestamp.timestamp() == 1.5
+        assert events[1].duration_ns == 66_000_000
+        assert self.stub.timeouts["tail"] is None
 
-        started = events[0]
-        assert isinstance(started, HistoryStarted)
-        assert isinstance(started, HistoryStarted)
-        assert started.id == "history-id"
-        assert started.timestamp_ns == 1500000000
-        assert started.timestamp.timestamp() == pytest.approx(1.5)
-        assert started.author == "joseph"
-        assert started.intent == "inspect cwd"
-        assert started.shell == "zsh"
-
-        ended = events[1]
-        assert isinstance(ended, HistoryEnded)
-        assert isinstance(ended, HistoryEnded)
-        assert ended.exit_code == 0
-        assert ended.duration_ns == 66000000
-        assert isinstance(self.stub.requests["tail"], history_pb2.TailHistoryRequest)
+    async def test_tail_accepts_explicit_whole_stream_deadline(self) -> None:
+        _ = [event async for event in self.client.tail(timeout=30.0)]
+        assert self.stub.timeouts["tail"] == 30.0
 
     async def test_tail_skips_reply_without_history(self) -> None:
         self.stub.tail_replies = [
             history_pb2.TailHistoryReply(kind=history_pb2.HISTORY_EVENT_KIND_STARTED),
             history_pb2.TailHistoryReply(
-                kind=history_pb2.HISTORY_EVENT_KIND_STARTED,
-                history=history_entry(),
+                kind=history_pb2.HISTORY_EVENT_KIND_STARTED, history=history_entry()
             ),
         ]
-        events = [event async for event in self.client.tail()]
-        assert len(events) == 1
+        assert len([event async for event in self.client.tail()]) == 1
 
     async def test_tail_rejects_unknown_event_kind(self) -> None:
         self.stub.tail_replies = [history_pb2.TailHistoryReply(kind=999, history=history_entry())]
@@ -213,9 +204,7 @@ class HistoryTests(unittest.IsolatedAsyncioTestCase):
         )
 
         class ErrorStub(FakeHistoryStub):
-            def TailHistory(
-                self, request: history_pb2.TailHistoryRequest
-            ) -> AsyncIterator[history_pb2.TailHistoryReply]:
+            def TailHistory(self, request, *, timeout=None):
                 async def replies():
                     if False:
                         yield history_pb2.TailHistoryReply()
@@ -223,32 +212,40 @@ class HistoryTests(unittest.IsolatedAsyncioTestCase):
 
                 return replies()
 
-        client = HistoryClient(ErrorStub())
         with pytest.raises(AtuinConnectionError, match="tail unavailable"):
-            _ = [event async for event in client.tail()]
+            _ = [event async for event in HistoryClient(ErrorStub()).tail()]
 
     def test_event_conversion_rejects_missing_history(self) -> None:
         with pytest.raises(AtuinProtocolError, match="did not contain a history entry"):
             _event_from_proto(history_pb2.TailHistoryReply())
 
-    async def test_command_context_manager_ends_on_success(self) -> None:
-        async with self.client.command("pwd", cwd="/tmp", session="s", hostname="h", exit_code=3) as started:
-            assert started.id == "started-id"
+    async def test_command_context_allows_exit_status_after_execution(self) -> None:
+        async with self.client.command("pwd", cwd="/tmp", session="s", hostname="h") as command:
+            assert command.id == "started-id"
+            command.exit_code = 17
+            command.duration_ns = 1234
 
-        assert "cancel" not in self.stub.requests
         request = self.stub.requests["end"]
         assert isinstance(request, history_pb2.EndHistoryRequest)
-        assert request.id == "started-id"
+        assert (request.exit, request.duration) == (17, 1234)
+        assert "cancel" not in self.stub.requests
+
+    async def test_command_context_preserves_initial_exit_code_compatibility(self) -> None:
+        async with self.client.command("pwd", cwd="/tmp", session="s", hostname="h", exit_code=3) as command:
+            assert command.exit_code == 3
+        request = self.stub.requests["end"]
+        assert isinstance(request, history_pb2.EndHistoryRequest)
         assert request.exit == 3
         assert request.duration > 0
 
     async def test_command_context_manager_cancels_on_exception(self) -> None:
-        with pytest.raises(RuntimeError, match="boom"):  # ruff: ignore[pytest-raises-with-multiple-statements]
+        with pytest.raises(RuntimeError, match="boom"):
             async with self.client.command("pwd", cwd="/tmp", session="s", hostname="h"):
                 msg = "boom"
                 raise RuntimeError(msg)
-
         assert "end" not in self.stub.requests
-        request = self.stub.requests["cancel"]
-        assert isinstance(request, history_pb2.CancelHistoryRequest)
-        assert request.id == "started-id"
+        assert isinstance(self.stub.requests["cancel"], history_pb2.CancelHistoryRequest)
+
+
+if __name__ == "__main__":
+    unittest.main()

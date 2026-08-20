@@ -118,11 +118,13 @@ async def run(
     output: bool,
     json_output: bool,
     connect_timeout: float,
+    rpc_timeout: float = 5.0,
 ) -> None:
     async with await Atuin.connect(
         socket=socket,
         tcp=tcp,
         timeout=connect_timeout,
+        rpc_timeout=rpc_timeout,
     ) as atuin:
         status = await atuin.status()
         if not json_output:

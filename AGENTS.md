@@ -1,61 +1,24 @@
 # AGENTS.md
 
-jerakeen is a small Python client library and CLI for Atuin's local daemon gRPC interface.
-
-Atuin is authoritative for command history, command metadata, search state, semantic command output, and daemon lifecycle. jerakeen provides a typed, Pythonic async API over that interface and a small CLI for observing live history activity.
+jerakeen is a small, typed Python client for Atuin's local daemon gRPC interface.
 
 ## Architecture constraints
 
-- Treat the vendored Atuin protobuf definitions under `proto/atuin/` as the protocol source of truth.
-- Keep generated protobuf and gRPC bindings under `src/jerakeen/_proto/` private implementation details.
-- Expose normal callers to the high-level API in `client.py`, `history.py`, `semantic.py`, `search.py`, and `control.py`.
-- Do not depend on Atuin's private SQLite schema or other internal storage details.
-- Do not add a second command-history database, output cache, journal, daemon, or persistent synchronization layer to jerakeen.
-- Preserve Atuin's daemon as the owner of history and captured output. Missing or expired semantic output is a supported state.
-- Keep protobuf-to-domain conversion at the service-wrapper boundary. Public APIs should prefer dataclasses, enums, async iterators, and jerakeen exceptions over raw protobuf messages and `grpc.aio.AioRpcError`.
-- Keep transport-specific behavior, including Unix-socket discovery and the Atuin HTTP/2 authority workaround, isolated in `_transport.py`.
-- Keep gRPC error translation isolated in `_rpc.py` and `exceptions.py`.
-- Prefer small structural `Protocol` interfaces for service stubs so production generated stubs and typed test doubles can share the same wrapper code.
-- Do not edit generated `_pb2.py`, `_pb2.pyi`, `_pb2_grpc.py`, or `_pb2_grpc.pyi` files by hand when the same change can be made reproducibly in `scripts/generate_protos.py`.
+- Treat the vendored files under `proto/atuin/` as the wire-protocol source of truth for the supported Atuin snapshot.
+- Generated protobuf/gRPC modules under `src/jerakeen/_proto/` are private implementation detail. Public APIs must use Python domain models and standard Python types.
+- Keep the public decomposition aligned with the daemon services: `history`, `semantic`, `search`, and `control`.
+- Do not depend on Atuin's SQLite schema, MCP server, CLI output formats, or other interfaces when the daemon RPC already exposes the capability.
+- Preserve protocol semantics, including protobuf optional-field presence, streaming shape, query correlation, and daemon protocol versioning.
+- Finite RPCs must have configurable deadlines. Long-lived streams must not inherit a short unary-RPC deadline implicitly.
+- New daemon protocol versions must be added deliberately: update the vendored protos, `proto/atuin/VERSION`, compatibility metadata, generated bindings, contract tests, and integration tests together.
 
-## Protobuf updates
+## Public API
 
-The Atuin daemon protobuf version vendored by jerakeen is recorded in `proto/atuin/VERSION`.
-
-When updating the daemon interface:
-
-1. Copy `crates/atuin-daemon/proto/*.proto` from the intended Atuin release into `proto/atuin/`.
-2. Update `proto/atuin/VERSION`.
-3. Run `just proto`.
-4. Review all generated diffs.
-5. Run `just check`.
-
-Generated bindings are committed so users do not need `protoc` or `grpcio-tools` at runtime.
-
-## Public API guidance
-
-- Keep `jerakeen._proto` private.
-- Prefer backwards-compatible additions to public dataclasses and service methods.
-- Keep async streaming APIs as `AsyncIterator`/`AsyncIterable` abstractions where practical.
-- Translate protocol inconsistencies into `AtuinProtocolError`.
-- Translate gRPC transport/status failures into the public jerakeen exception hierarchy.
-- Avoid exposing transport configuration unless callers genuinely need it.
-- Keep the CLI implemented in terms of the same public client API used by library consumers.
-
-## Testing
-
-The test suite should cover three layers:
-
-- unit tests for every public wrapper method and conversion path;
-- protobuf contract tests for vendored messages, fields, enums, `oneof`s, RPCs, and streaming shapes;
-- real `grpc.aio` integration tests over TCP and Unix-domain sockets where supported.
-
-When adding or changing an RPC wrapper, add tests for both the Python-facing behavior and the underlying request/response shape.
+- Prefer immutable slotted dataclasses for returned values and Python-native representations such as `datetime`, `Path`, `UUID`, iterables, and async iterators.
+- Translate raw gRPC failures into the public `AtuinError` hierarchy.
+- Validate caller mistakes locally when the daemon would otherwise silently change semantics.
+- Avoid exposing `_proto`, generated stubs, grpc call objects, or protobuf enum integers through the normal API.
 
 ## Validation
 
-Run `just check` for substantive changes. It runs syntax checks, formatting, linting, static type checking, and tests.
-
-Use targeted pytest tests while iterating.
-
-Do not claim a check passed when the required tool was unavailable or not run.
+Run `just check` for substantive changes. Protocol changes additionally require `just proto` and the protobuf contract tests. The opt-in live-daemon test is run with `CATUIN_LIVE_TEST=1` against an installed Atuin daemon and must remain non-mutating.

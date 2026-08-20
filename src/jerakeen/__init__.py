@@ -1,11 +1,20 @@
+from importlib.metadata import PackageNotFoundError, version
+
 from jerakeen.client import Atuin, connect
+from jerakeen.compatibility import (
+    SUPPORTED_PROTOCOLS,
+    VENDORED_ATUIN_VERSION,
+    Compatibility,
+)
 from jerakeen.control import ControlClient
 from jerakeen.exceptions import (
+    AtuinCompatibilityError,
     AtuinConnectionError,
     AtuinError,
     AtuinNotFoundError,
     AtuinProtocolError,
     AtuinRpcError,
+    AtuinTimeoutError,
     AtuinUnsupportedError,
 )
 from jerakeen.history import HistoryClient
@@ -14,6 +23,8 @@ from jerakeen.models import (
     CommandOutput,
     DaemonStatus,
     FilterMode,
+    HistoryCancel,
+    HistoryCommand,
     HistoryEnd,
     HistoryEnded,
     HistoryEvent,
@@ -28,22 +39,32 @@ from jerakeen.models import (
 from jerakeen.search import SearchClient, SearchSession
 from jerakeen.semantic import SemanticClient
 
-__version__ = "0.9.3"
+try:
+    __version__ = version("jerakeen")
+except PackageNotFoundError:
+    __version__ = "0+unknown"
 
 __all__ = [
+    "SUPPORTED_PROTOCOLS",
+    "VENDORED_ATUIN_VERSION",
     "Atuin",
+    "AtuinCompatibilityError",
     "AtuinConnectionError",
     "AtuinError",
     "AtuinNotFoundError",
     "AtuinProtocolError",
     "AtuinRpcError",
+    "AtuinTimeoutError",
     "AtuinUnsupportedError",
     "CommandCapture",
     "CommandOutput",
+    "Compatibility",
     "ControlClient",
     "DaemonStatus",
     "FilterMode",
+    "HistoryCancel",
     "HistoryClient",
+    "HistoryCommand",
     "HistoryEnd",
     "HistoryEnded",
     "HistoryEvent",

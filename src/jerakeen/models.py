@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from datetime import datetime
+    from uuid import UUID
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +61,33 @@ class HistoryEnd:
 
 
 @dataclass(frozen=True, slots=True)
+class HistoryCancel:
+    version: str
+    protocol: int
+
+
+@dataclass(slots=True)
+class HistoryCommand:
+    """A command lifecycle whose completion fields can be set inside the context."""
+
+    start: HistoryStart
+    exit_code: int = 0
+    duration_ns: int | None = None
+
+    @property
+    def id(self) -> str:
+        return self.start.id
+
+    @property
+    def version(self) -> str:
+        return self.start.version
+
+    @property
+    def protocol(self) -> int:
+        return self.start.protocol
+
+
+@dataclass(frozen=True, slots=True)
 class OutputLine:
     line_number: int
     content: str
@@ -108,13 +136,43 @@ class SearchContext:
 @dataclass(frozen=True, slots=True)
 class SearchQuery:
     query: str
-    query_id: int = 1
+    query_id: int | None = None
     filter_mode: FilterMode = FilterMode.GLOBAL
     context: SearchContext | None = None
     shells: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.query_id is not None and not 0 <= self.query_id <= 2**64 - 1:
+            msg = "query_id must fit an unsigned 64-bit integer"
+            raise ValueError(msg)
+
+        if self.filter_mode is FilterMode.GLOBAL:
+            return
+
+        context = self.context
+        if context is None:
+            msg = f"{self.filter_mode.value} search requires a SearchContext"
+            raise ValueError(msg)
+
+        required = {
+            FilterMode.HOST: ("hostname", context.hostname),
+            FilterMode.SESSION: ("session_id", context.session_id),
+            FilterMode.SESSION_PRELOAD: ("session_id", context.session_id),
+            FilterMode.DIRECTORY: ("cwd", context.cwd),
+        }
+        if self.filter_mode in required:
+            field, value = required[self.filter_mode]
+            if not value:
+                msg = f"{self.filter_mode.value} search requires context.{field}"
+                raise ValueError(msg)
+            return
+
+        if self.filter_mode is FilterMode.WORKSPACE and not (context.git_root or context.cwd):
+            msg = "workspace search requires context.git_root or context.cwd"
+            raise ValueError(msg)
 
 
 @dataclass(frozen=True, slots=True)
 class SearchResult:
     query_id: int
-    ids: tuple[bytes, ...]
+    ids: tuple[UUID, ...]

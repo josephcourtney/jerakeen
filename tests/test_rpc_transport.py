@@ -22,6 +22,7 @@ from jerakeen.exceptions import (
     AtuinNotFoundError,
     AtuinProtocolError,
     AtuinRpcError,
+    AtuinTimeoutError,
     AtuinUnsupportedError,
     from_grpc_error,
 )
@@ -39,6 +40,7 @@ def aio_error(code: grpc.StatusCode, details: str | None = "details") -> grpc.ai
 class RpcTests(unittest.IsolatedAsyncioTestCase):
     def test_specific_grpc_error_mappings(self) -> None:
         expected = {
+            grpc.StatusCode.DEADLINE_EXCEEDED: AtuinTimeoutError,
             grpc.StatusCode.NOT_FOUND: AtuinNotFoundError,
             grpc.StatusCode.UNIMPLEMENTED: AtuinUnsupportedError,
             grpc.StatusCode.UNAVAILABLE: AtuinConnectionError,
@@ -109,7 +111,10 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
             ]
 
     def test_discover_target_prefers_explicit_tcp(self) -> None:
-        assert discover_target("/ignored.sock", "127.0.0.1:9999") == ("127.0.0.1:9999", "127.0.0.1:9999")
+        assert discover_target("/ignored.sock", "127.0.0.1:9999") == (
+            "127.0.0.1:9999",
+            "127.0.0.1:9999",
+        )
 
     def test_discover_target_explicit_unix_socket(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -138,7 +143,7 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
             patch("jerakeen._transport.unix_socket_candidates", return_value=candidates),
             patch.object(Path, "exists", return_value=False),
         ):
-            with pytest.raises(FileNotFoundError, match=r"/a.sock") as caught:
+            with pytest.raises(FileNotFoundError, match="/a.sock") as caught:
                 discover_target(None, None)
             assert "/b.sock" in str(caught.value)
 

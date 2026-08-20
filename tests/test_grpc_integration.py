@@ -3,12 +3,14 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from uuid import UUID
 
 import grpc
 import pytest
 
 from jerakeen import (
     Atuin,
+    AtuinCompatibilityError,
     AtuinNotFoundError,
     CommandCapture,
     FilterMode,
@@ -33,11 +35,12 @@ class FakeDaemonService:
         self.search_requests: list[search_pb2.SearchRequest] = []
         self.control_requests: list[control_pb2.SendEventRequest] = []
         self.status_error: grpc.StatusCode | None = None
+        self.protocol = 1
 
     async def status(self, request: history_pb2.StatusRequest, context) -> history_pb2.StatusReply:
         if self.status_error is not None:
             await context.abort(self.status_error, "status failed")
-        return history_pb2.StatusReply(healthy=True, version="18.19.0", pid=123, protocol=1)
+        return history_pb2.StatusReply(healthy=True, version="18.19.0", pid=123, protocol=self.protocol)
 
     async def start_history(
         self, request: history_pb2.StartHistoryRequest, context
@@ -119,7 +122,7 @@ class FakeDaemonService:
             self.search_requests.append(request)
             yield search_pb2.SearchResponse(
                 query_id=request.query_id,
-                ids=[f"result-{request.query_id}".encode()],
+                ids=[UUID(int=request.query_id).bytes],
             )
 
     async def send_event(
@@ -258,6 +261,9 @@ class GrpcIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.tempdir.cleanup()
 
     async def _exercise_all_rpc_shapes(self, atuin: Atuin) -> None:
+        assert atuin.version == "18.19.0"
+        assert atuin.protocol == 1
+        assert atuin.compatibility.compatible
         status = await atuin.status()
         assert (status.version, status.protocol, status.pid) == ("18.19.0", 1, 123)
 
@@ -323,17 +329,27 @@ class GrpcIntegrationTests(unittest.IsolatedAsyncioTestCase):
             ),
             shells=["zsh"],
         )
-        assert query.ids == (b"result-10",)
+        assert query.ids == (UUID(int=10),)
 
         async def search_queries():
             yield SearchQuery(query="g", query_id=11, filter_mode=FilterMode.GLOBAL)
-            yield SearchQuery(query="gi", query_id=12, filter_mode=FilterMode.HOST)
+            yield SearchQuery(
+                query="gi",
+                query_id=12,
+                filter_mode=FilterMode.HOST,
+                context=SearchContext(hostname="host:user"),
+            )
 
         streamed = [result async for result in atuin.search.stream(search_queries())]
         assert [result.query_id for result in streamed] == [11, 12]
 
         async with atuin.search.session() as session:
-            result = await session.query("git", query_id=13, filter_mode=FilterMode.SESSION)
+            result = await session.query(
+                "git",
+                query_id=13,
+                filter_mode=FilterMode.SESSION,
+                context=SearchContext(session_id="session"),
+            )
             assert result.query_id == 13
 
         await atuin.control.force_sync()
@@ -389,11 +405,21 @@ class GrpcIntegrationTests(unittest.IsolatedAsyncioTestCase):
             status = await atuin.status()
             assert status.version == "18.19.0"
 
-    async def test_real_grpc_status_is_translated(self) -> None:
+    async def test_handshake_grpc_status_is_translated(self) -> None:
         self.daemon.status_error = grpc.StatusCode.NOT_FOUND
-        async with await Atuin.connect(tcp=f"127.0.0.1:{self.port}") as atuin:
-            with pytest.raises(AtuinNotFoundError, match="status failed"):
-                await atuin.status()
+        with pytest.raises(AtuinNotFoundError, match="status failed"):
+            await Atuin.connect(tcp=f"127.0.0.1:{self.port}")
+
+    async def test_incompatible_protocol_is_rejected_during_handshake(self) -> None:
+        self.daemon.protocol = 999
+        with pytest.raises(AtuinCompatibilityError, match="protocol 999"):
+            await Atuin.connect(tcp=f"127.0.0.1:{self.port}")
+
+    async def test_compatibility_check_can_be_inspected_without_rejection(self) -> None:
+        self.daemon.protocol = 999
+        async with await Atuin.connect(tcp=f"127.0.0.1:{self.port}", check_compatibility=False) as atuin:
+            assert atuin.protocol == 999
+            assert not atuin.compatibility.compatible
 
 
 if __name__ == "__main__":

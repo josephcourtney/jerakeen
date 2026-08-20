@@ -75,7 +75,8 @@ def _generate_grpc_type_stubs() -> None:
                     else:
                         result = f"Awaitable[{output_type}]"
                     lines.append(
-                        f"    def {method.name}(self, {arg}) -> {result}: ..."
+                        f"    def {method.name}(self, {arg}, *, "
+                        f"timeout: float | None = ...) -> {result}: ..."
                     )
                 lines.append("")
             (OUT_DIR / f"{name}_pb2_grpc.pyi").write_text(
@@ -87,6 +88,7 @@ def _generate_grpc_type_stubs() -> None:
 
 def main() -> int:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
+    (OUT_DIR / "__init__.py").touch()
     rc = protoc.main(
         [
             "grpc_tools.protoc",
@@ -108,3 +110,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

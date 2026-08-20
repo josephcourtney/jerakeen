@@ -1,7 +1,7 @@
 # =================================== project ====================================
 [project]
   name = "jerakeen"
-  version = "0.9.2"
+  version = "0.9.3"
   description = "Python client and CLI for Atuin's local daemon gRPC interface."
   readme = "README.md"
   authors = [
@@ -14,12 +14,12 @@
   classifiers = [
   ]
   dependencies = [
-      "grpcio>=1.83.0",
-      "protobuf>=5.26",
-]
+    "grpcio>=1.83.0",
+    "protobuf>=5.26",
+  ]
 
   [project.scripts]
-  jerakeen = "jerakeen.cli:main"
+    jerakeen = "jerakeen.cli:main"
 
 [dependency-groups]
   dev = [
@@ -43,7 +43,7 @@
     "mkdocs-material>=9.7.1",
     "showcov>=0.2.0",
     "pip-audit>=2.10.0",
-]
+  ]
 
 # =================================== build ====================================
 [build-system]
@@ -52,8 +52,7 @@
 
 [tool.uv]
   [tool.uv.sources]
-    showcov                      = { git = "https://github.com/josephcourtney/showcov.git", rev = "main" }
-
+    showcov = { git = "https://github.com/josephcourtney/showcov.git", rev = "main" }
 
 
 # ==================================== lint ====================================
@@ -88,19 +87,19 @@
         "PLC1901", # `r.stderr.strip() != ""` can be simplified to `r.stderr.strip()` as an empty string is falsey
       ]
 
-      [tool.ruff.lint.extend-per-file-ignores]
-        "tests/**/*.py" = [
-          "E402",
-          "PLR6301",
-          "hardcoded-temp-file", # Probable insecure usage of temporary file or directory: "/tmp"
-        ]
+    [tool.ruff.lint.extend-per-file-ignores]
+      "tests/**/*.py" = [
+        "E402",
+        "PLR6301",
+        "hardcoded-temp-file", # Probable insecure usage of temporary file or directory: "/tmp"
+      ]
 
-        "src/jerakeen/_interfaces.py" = ["N802"]
+      "src/jerakeen/_interfaces.py" = ["N802"]
 
-        "tests/test_control.py" = ["N802"]
-        "tests/test_history.py" = ["N802"]
-        "tests/test_search.py" = ["N802"]
-        "tests/test_semantic.py" = ["N802"]
+      "tests/test_control.py"  = ["N802"]
+      "tests/test_history.py"  = ["N802"]
+      "tests/test_search.py"   = ["N802"]
+      "tests/test_semantic.py" = ["N802"]
 
 
 [tool.ty.src]
@@ -194,7 +193,7 @@
 
 # =================================== test:coverage ===================================
 [tool.coverage.run]
-  source         = ["jerakeen"]
-  branch         = true
-  parallel       = true
+  source          = ["jerakeen"]
+  branch          = true
+  parallel        = true
   dynamic_context = "test_function"

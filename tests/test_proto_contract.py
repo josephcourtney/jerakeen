@@ -33,7 +33,8 @@ class ProtoContractTests(unittest.TestCase):
             "Status": (False, False),
             "Shutdown": (False, False),
         }
-        assert set(history_pb2.DESCRIPTOR.enum_types_by_name["HistoryEventKind"].values_by_name) == {
+        history_kinds = history_pb2.DESCRIPTOR.enum_types_by_name["HistoryEventKind"]
+        assert set(history_kinds.values_by_name) == {
             "HISTORY_EVENT_KIND_UNSPECIFIED",
             "HISTORY_EVENT_KIND_STARTED",
             "HISTORY_EVENT_KIND_ENDED",

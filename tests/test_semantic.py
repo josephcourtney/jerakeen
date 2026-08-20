@@ -20,13 +20,13 @@ class FakeSemanticStub:
         self.recorded: list[semantic_pb2.CommandCapture] = []
 
     async def CommandOutput(
-        self, request: semantic_pb2.CommandOutputRequest
+        self, request: semantic_pb2.CommandOutputRequest, *, timeout: float | None = None
     ) -> semantic_pb2.CommandOutputReply:
         self.command_output_request = request
         return self.command_output_reply
 
     async def RecordCommands(
-        self, requests: AsyncIterable[semantic_pb2.CommandCapture]
+        self, requests: AsyncIterable[semantic_pb2.CommandCapture], *, timeout: float | None = None
     ) -> semantic_pb2.RecordCommandsReply:
         async for request in requests:
             self.recorded.append(request)
@@ -61,14 +61,21 @@ class SemanticTests(unittest.IsolatedAsyncioTestCase):
         assert output.text == "line 2\nline 3"
         assert output.total_bytes == 999
         assert output.total_lines == 50
-        assert [(line.line_number, line.content) for line in output.lines] == [(2, "line 2"), (3, "line 3")]
+        assert [(line.line_number, line.content) for line in output.lines] == [
+            (2, "line 2"),
+            (3, "line 3"),
+        ]
         assert output.truncated
         assert output.observed_bytes == 1234
 
         request = self.stub.command_output_request
         assert request is not None
         assert request.history_id == "history-id"
-        assert [(value.start, value.end) for value in request.ranges] == [(0, 10), (20, 30), (40, 50)]
+        assert [(value.start, value.end) for value in request.ranges] == [
+            (0, 10),
+            (20, 30),
+            (40, 50),
+        ]
 
     async def test_output_not_found_returns_none(self) -> None:
         self.stub.command_output_reply = semantic_pb2.CommandOutputReply(found=False)

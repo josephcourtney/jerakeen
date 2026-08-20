@@ -35,6 +35,12 @@ def parse_args() -> argparse.Namespace:
         default=5.0,
         help="Seconds to wait for the daemon connection (default: 5).",
     )
+    parser.add_argument(
+        "--rpc-timeout",
+        type=float,
+        default=5.0,
+        help="Deadline in seconds for finite daemon RPCs (default: 5).",
+    )
     return parser.parse_args()
 
 
@@ -48,6 +54,7 @@ def main() -> None:
                 output=args.output,
                 json_output=args.json,
                 connect_timeout=args.connect_timeout,
+                rpc_timeout=args.rpc_timeout,
             )
         )
     except KeyboardInterrupt:

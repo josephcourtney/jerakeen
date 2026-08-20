@@ -34,6 +34,9 @@ test:
 test-cov:
     {{PYTEST}} --cov=jerakeen --cov-report=term-missing
 
+test-live:
+    CATUIN_LIVE_TEST=1 {{PYTEST}} tests/test_live_atuin.py
+
 check: syntax format lint typecheck test
 
 build: proto
@@ -46,3 +49,4 @@ clean:
   rm -rf .cache .pytest_cache .import_linter_cache
   rm -rf dist build mutants
   rm -rf **/.DS_Store 
+

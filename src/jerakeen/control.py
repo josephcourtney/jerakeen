@@ -14,11 +14,12 @@ if TYPE_CHECKING:
 class ControlClient:
     """Semantic methods for Atuin's daemon event-bus Control service."""
 
-    def __init__(self, stub: ControlStub) -> None:
+    def __init__(self, stub: ControlStub, *, timeout: float | None = 5.0) -> None:
         self._stub = stub
+        self._timeout = timeout
 
     async def _send(self, request: control_pb2.SendEventRequest) -> None:
-        await call(self._stub.SendEvent(request))
+        await call(self._stub.SendEvent(request, timeout=self._timeout))
 
     async def force_sync(self) -> None:
         await self._send(control_pb2.SendEventRequest(force_sync=control_pb2.ForceSyncEvent()))

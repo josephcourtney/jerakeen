@@ -23,6 +23,8 @@ class CliTests(unittest.TestCase):
                 "--output",
                 "--connect-timeout",
                 "2.5",
+                "--rpc-timeout",
+                "3.5",
             ],
         ):
             args = cli.parse_args()
@@ -30,7 +32,8 @@ class CliTests(unittest.TestCase):
         assert args.tcp is None
         assert args.json
         assert args.output
-        assert args.connect_timeout == pytest.approx(2.5)
+        assert args.connect_timeout == 2.5
+        assert args.rpc_timeout == 3.5
 
     def test_parse_args_rejects_socket_and_tcp_together(self) -> None:
         with (
@@ -53,6 +56,7 @@ class CliTests(unittest.TestCase):
             output=False,
             json_output=True,
             connect_timeout=5.0,
+            rpc_timeout=5.0,
         )
 
     def test_main_prints_atuin_error_and_exits_one(self) -> None:

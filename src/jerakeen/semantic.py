@@ -45,8 +45,9 @@ def _capture_to_proto(capture: CommandCapture) -> semantic_pb2.CommandCapture:
 class SemanticClient:
     """Pythonic wrapper around Atuin's Semantic gRPC service."""
 
-    def __init__(self, stub: SemanticStub) -> None:
+    def __init__(self, stub: SemanticStub, *, timeout: float | None = 5.0) -> None:
         self._stub = stub
+        self._timeout = timeout
 
     async def output(
         self,
@@ -59,18 +60,31 @@ class SemanticClient:
                 semantic_pb2.CommandOutputRequest(
                     history_id=history_id,
                     ranges=[_output_range(value) for value in ranges],
-                )
+                ),
+                timeout=self._timeout,
             )
         )
+
         if not reply.found:
             return None
+
+        lines = tuple(
+            OutputLine(
+                line_number=line.line_number,
+                content=line.content,
+            )
+            for line in reply.lines
+        )
+
+        # Atuin 18.19 returns selected output through `lines`.
+        # `reply.output` is currently intentionally empty.
+        text = reply.output or "\n".join(line.content for line in lines)
+
         return CommandOutput(
-            text=reply.output,
+            text=text,
             total_bytes=reply.total_bytes,
             total_lines=reply.total_lines,
-            lines=tuple(
-                OutputLine(line_number=line.line_number, content=line.content) for line in reply.lines
-            ),
+            lines=lines,
             truncated=reply.output_truncated,
             observed_bytes=reply.output_observed_bytes,
         )
@@ -87,5 +101,5 @@ class SemanticClient:
                 for capture in captures:
                     yield _capture_to_proto(capture)
 
-        reply = await call(self._stub.RecordCommands(requests()))
+        reply = await call(self._stub.RecordCommands(requests(), timeout=self._timeout))
         return reply.accepted
