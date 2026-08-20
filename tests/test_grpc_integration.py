@@ -92,15 +92,15 @@ class FakeDaemonService:
         self.semantic_output_requests.append(request)
         return semantic_pb2.CommandOutputReply(
             found=True,
-            output="selected output",
-            total_bytes=200,
-            total_lines=20,
+            output="",
+            total_bytes=9,
+            total_lines=2,
             lines=[
                 semantic_pb2.OutputLine(line_number=2, content="two"),
                 semantic_pb2.OutputLine(line_number=3, content="three"),
             ],
             output_truncated=True,
-            output_observed_bytes=300,
+            output_observed_bytes=12,
         )
 
     async def record_commands(self, request_iterator, context) -> semantic_pb2.RecordCommandsReply:
@@ -290,8 +290,11 @@ class GrpcIntegrationTests(unittest.IsolatedAsyncioTestCase):
             ranges=[(0, 10), slice(20, 30)],
         )
         assert output is not None
-        assert output is not None
-        assert output.lines[0].line_number == 2
+        assert output.text == "two\nthree"
+        assert [(line.line_number, line.content) for line in output.lines] == [
+            (2, "two"),
+            (3, "three"),
+        ]
         assert output.truncated
         assert (
             await atuin.semantic.record_commands([
