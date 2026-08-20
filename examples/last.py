@@ -98,13 +98,31 @@ async def main() -> None:
     )
 
     print(f"id:       {previous.history_id}")
-    print(f"command:  {previous.command}")
+
+    if not previous.command:
+        print("command: <no command>")
+    elif len(previous.command.splitlines()) > 1:
+        print("command:")
+        print("```")
+        print(previous.command)
+        print("```")
+    else:
+        print(f"command: `{previous.command}`")
+
     print(f"ran at:   {previous.timestamp}")
     print(f"duration: {previous.duration}")
     print(f"exit:     {previous.exit_status}")
     print("output:")
-    print(previous.output or "<no captured output>")
 
+    if not previous.output:
+        print("output: <no captured output>")
+    elif len(previous.output.splitlines()) > 1:
+        print("output:")
+        print("```")
+        print(previous.output)
+        print("```")
+    else:
+        print(f"output: `{previous.output}`")
 
 
 asyncio.run(main())
