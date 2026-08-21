@@ -32,31 +32,6 @@ The four daemon services are exposed as:
 - `atuin.search` — one-shot, streaming, and session-oriented search
 - `atuin.control` — force sync, reload settings, history index events, and shutdown
 
-The protobuf/gRPC layer is private implementation detail in `jerakeen._proto`.
-
-### Deadlines
-
-`connect(timeout=...)` controls how long connection establishment may take. `rpc_timeout` controls finite daemon RPCs and defaults to 5 seconds:
-
-```python
-async with connect(rpc_timeout=10.0) as atuin:
-    status = await atuin.status()
-```
-
-Pass `rpc_timeout=None` to disable finite-RPC deadlines. Long-lived `history.tail()` and `search.stream()` calls do not inherit the finite-RPC timeout; they accept an explicit `timeout=` only when a deadline for the entire stream is wanted. Interactive `SearchSession` uses `rpc_timeout` as a per-query deadline without terminating the underlying stream.
-
-### Compatibility
-
-Connection reads `History.Status` and checks the daemon protocol before returning the client. The vendored Atuin version and supported protocol numbers are exposed as `VENDORED_ATUIN_VERSION` and `SUPPORTED_PROTOCOLS`.
-
-```python
-async with connect() as atuin:
-    assert atuin.compatibility.compatible
-    print(atuin.version, atuin.protocol)
-```
-
-An unsupported daemon protocol raises `AtuinCompatibilityError`. `check_compatibility=False` permits inspection of an incompatible daemon but does not imply that later RPCs are safe.
-
 ### Search
 
 Search results expose history IDs as `uuid.UUID` values. Filter-specific context is validated before the request is sent.

@@ -30,6 +30,12 @@ class PreviousCommand:
     output: str | None
 
 
+def markdown_escape_code(code):
+    if len(code.splitlines()) > 1:
+        return f"```\n{code}\n```"
+    return f"`{code}`"
+
+
 async def get_last_history() -> tuple[str, str, str, str, int]:
     # IMPORTANT:
     # Run Atuin before creating the jerakeen/gRPC connection.
@@ -99,30 +105,29 @@ async def main() -> None:
 
     print(f"id:       {previous.history_id}")
 
-    if not previous.command:
-        print("command: <no command>")
-    elif len(previous.command.splitlines()) > 1:
-        print("command:")
-        print("```")
-        print(previous.command)
-        print("```")
-    else:
-        print(f"command: `{previous.command}`")
-
     print(f"ran at:   {previous.timestamp}")
     print(f"duration: {previous.duration}")
     print(f"exit:     {previous.exit_status}")
-    print("output:")
 
-    if not previous.output:
-        print("output: <no captured output>")
-    elif len(previous.output.splitlines()) > 1:
-        print("output:")
-        print("```")
-        print(previous.output)
-        print("```")
+    print("command:")
+    if previous.command:
+        print(markdown_escape_code(previous.command))
     else:
-        print(f"output: `{previous.output}`")
+        print("<no command>")
+
+    print(f"command: `{previous.command}`")
+
+    print("stdout:")
+    if previous.output:
+        print(markdown_escape_code(previous.output))
+    else:
+        print("<stdout capture empty>")
+
+    print("stderr:")
+    if previous.error:
+        print(markdown_escape_code(previous.error))
+    else:
+        print("<stderr capture empty>")
 
 
 asyncio.run(main())
