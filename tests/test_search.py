@@ -171,6 +171,7 @@ class SearchTests(unittest.IsolatedAsyncioTestCase):
     async def test_prepare_index_uses_client_deadline(self) -> None:
         assert await self.client.prepare_index(["zsh", "bash"]) is None
         assert self.stub.prepare_timeout == 5.0
+        assert self.stub.prepare_request is not None
         assert list(self.stub.prepare_request.shells) == ["zsh", "bash"]
 
     async def test_query_uses_deadline_and_pythonic_uuid(self) -> None:
