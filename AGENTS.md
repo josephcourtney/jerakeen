@@ -4,21 +4,21 @@ jerakeen is a small, typed Python client for Atuin's local daemon gRPC interface
 
 ## Architecture constraints
 
-- Treat the vendored files under `proto/atuin/` as the wire-protocol source of truth for the supported Atuin snapshot.
-- Generated protobuf/gRPC modules under `src/jerakeen/_proto/` are private implementation detail. Public APIs must use Python domain models and standard Python types.
-- Keep the public decomposition aligned with the daemon services: `history`, `semantic`, `search`, and `control`.
-- Do not depend on Atuin's SQLite schema, MCP server, CLI output formats, or other interfaces when the daemon RPC already exposes the capability.
-- Preserve protocol semantics, including protobuf optional-field presence, streaming shape, query correlation, and daemon protocol versioning.
-- Finite RPCs must have configurable deadlines. Long-lived streams must not inherit a short unary-RPC deadline implicitly.
-- New daemon protocol versions must be added deliberately: update the vendored protos, `proto/atuin/VERSION`, compatibility metadata, generated bindings, contract tests, and integration tests together.
+- Treat `proto/atuin/` as the wire-protocol source of truth for the supported Atuin snapshot.
+- Generated modules under `src/jerakeen/_proto/` are private implementation detail. Public APIs use Python domain models and standard Python types.
+- Keep the public decomposition aligned with the daemon services in the vendored snapshot. Atuin 18.23 protocol 3 exposes `history` and `search`; do not recreate removed `semantic` or `control` services.
+- Do not depend on Atuin's SQLite schema, MCP server, CLI output formats, or private Rust implementation when the daemon RPC exposes the capability.
+- Preserve protobuf optional-field presence, oneofs, streaming shape, query correlation, UUID encoding, range semantics, and daemon protocol versioning.
+- Finite RPCs use configurable deadlines. Long-lived streams do not inherit a short unary-RPC deadline implicitly.
+- Add a daemon protocol version only after its complete proto snapshot, generated bindings, wrappers, contract tests, and integration tests are updated together.
 
 ## Public API
 
-- Prefer immutable slotted dataclasses for returned values and Python-native representations such as `datetime`, `Path`, `UUID`, iterables, and async iterators.
+- Prefer immutable slotted dataclasses for returned values and Python-native `datetime`, `Path`, `UUID`, iterables, and async iterators.
 - Translate raw gRPC failures into the public `AtuinError` hierarchy.
-- Validate caller mistakes locally when the daemon would otherwise silently change semantics.
-- Avoid exposing `_proto`, generated stubs, grpc call objects, or protobuf enum integers through the normal API.
+- Validate caller mistakes locally and reject malformed logically-required daemon fields.
+- Avoid exposing `_proto`, generated stubs, grpc call objects, or protobuf enum integers through normal APIs.
 
 ## Validation
 
-Run `just check` for substantive changes. Protocol changes additionally require `just proto` and the protobuf contract tests. The opt-in live-daemon test is run with `CATUIN_LIVE_TEST=1` against an installed Atuin daemon and must remain non-mutating.
+Run `just check` for substantive changes. Protocol changes additionally require `just proto`, `just proto-check`, protobuf contract tests, real in-process gRPC framing tests, and the opt-in non-mutating live-daemon test (`CATUIN_LIVE_TEST=1`) against the target Atuin release.

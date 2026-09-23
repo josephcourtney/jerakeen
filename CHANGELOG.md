@@ -1,26 +1,30 @@
 # Changelog
 
-## Unreleased
+## 0.10.0 - 2026-09-23
 
-### Changed
+### Breaking changes
 
-- Add a configurable finite-RPC deadline (`rpc_timeout`, default 5 seconds) while leaving live history and general search streams unbounded unless explicitly requested.
-- Perform a daemon status/compatibility handshake during connection and expose `Atuin.version`, `Atuin.protocol`, and `Atuin.compatibility`.
-- Convert daemon search-result history IDs from their 16-byte wire representation to `uuid.UUID` objects.
-- Validate search contexts for host, session, directory, workspace, and session-preload filters so incomplete requests cannot silently degrade to global search.
-- Make `SearchSession` allocate query IDs automatically, correlate responses by ID, support concurrent outstanding queries, and apply the RPC timeout per interactive query.
-- Return `HistoryCancel` metadata from `HistoryClient.cancel()`.
-- Yield a mutable `HistoryCommand` lifecycle handle from `HistoryClient.command()` so exit status and duration can be supplied after command execution.
-- Derive `jerakeen.__version__` from installed package metadata instead of maintaining a second version constant.
+- Move the supported daemon snapshot from Atuin 18.19 protocol 1 to Atuin 18.23 protocol 3. Protocol 1 is no longer accepted by this release.
+- Remove the obsolete public `SemanticClient`, `ControlClient`, `atuin.semantic`, and `atuin.control` service surfaces because Atuin removed those daemon services.
+- Move captured-output registration and retrieval to `HistoryClient` as `register_output()` and `output()`.
+- Change history lifecycle IDs to `uuid.UUID`; `HistoryEnd` now reports the protocol-3 `record_id` and `record_idx` rather than the old history `id`/`idx` reply shape.
+- Replace the old semantic `CommandCapture` model with protocol-3 retained-output segments and `CommandCaptureMeta`.
 
 ### Added
 
-- `AtuinTimeoutError` and `AtuinCompatibilityError`.
-- Protocol compatibility metadata for the vendored Atuin 18.19.0 daemon protocol.
-- Opt-in, non-mutating live-daemon integration coverage via `CATUIN_LIVE_TEST=1`.
-- Tests for RPC deadlines, search response correlation, out-of-order concurrent queries, malformed history IDs, query timeouts, search-context validation, and incompatible daemon protocols.
+- Protocol-3 `common.proto`, structured History/Record UUID conversion, protobuf `Duration` handling, history delete/rebuild RPCs, cancelled tail events, and lag notifications.
+- Captured-output chunk/range models including retained head/tail line numbering and capture metadata.
+- Full-text captured-output search through `SearchClient.output()` with ranked matches and highlighted lines.
+- `AuthorKind`, `HistoryCancelled`, `HistoryLagged`, `HistoryDelete`, `HistoryRebuild`, `CommandCaptureMeta`, `OutputChunk`, `HighlightedText`, `OutputSearchLine`, and `OutputSearchMatch` public models.
+- Deterministic protocol generation with `just proto-check`.
+
+### Changed
+
+- Whole-output retrieval explicitly requests Atuin's `[0, -1]` inclusive range and maps gRPC `NOT_FOUND` to `None`.
+- `HistoryClient.end()` accepts an omitted duration and encodes supplied nanoseconds as `google.protobuf.Duration`.
+- The CLI retrieves ended-command output through `History.GetCommandOutput` and reports `cancelled` and `lagged` tail events.
+- Live-daemon coverage now verifies protocol 3 and non-mutating command-output retrieval.
 
 ### Fixed
 
-- Replace stale Copout/MCP contributor and product-policy documentation with jerakeen's daemon-gRPC architecture and compatibility policy.
-- Align the package metadata version with the 0.9.3 API line.
+- Prevent a protocol-1 client from connecting to a protocol-3 daemon and failing later with `UNIMPLEMENTED`; compatibility is rejected at the status handshake unless explicitly disabled for diagnostics.

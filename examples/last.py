@@ -4,22 +4,6 @@ from dataclasses import dataclass
 from jerakeen import AtuinError, connect
 
 
-async def atuin_is_running() -> bool:
-    try:
-        async with connect(timeout=1.0) as atuin:
-            status = await atuin.status()
-    except (AtuinError, FileNotFoundError):
-        return False
-
-    if status:
-        print("healthy:", status.healthy)
-        print("version:", status.version)
-        print("protocol:", status.protocol)
-        print("pid:", status.pid)
-        return status.healthy
-    return None
-
-
 @dataclass(frozen=True)
 class PreviousCommand:
     history_id: str
@@ -30,15 +14,15 @@ class PreviousCommand:
     output: str | None
 
 
-def markdown_escape_code(code):
+def markdown_escape_code(code: str) -> str:
     if len(code.splitlines()) > 1:
         return f"```\n{code}\n```"
     return f"`{code}`"
 
 
 async def get_last_history() -> tuple[str, str, str, str, int]:
-    # IMPORTANT:
-    # Run Atuin before creating the jerakeen/gRPC connection.
+    # Run Atuin before opening a gRPC channel; grpcio owns background threads and
+    # POSIX fork after gRPC initialization can produce warnings.
     proc = await asyncio.create_subprocess_exec(
         "atuin",
         "history",
@@ -48,41 +32,25 @@ async def get_last_history() -> tuple[str, str, str, str, int]:
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-
     stdout, stderr = await proc.communicate()
-
     if proc.returncode != 0:
         raise RuntimeError(stderr.decode())
 
-    text = stdout.decode().rstrip("\n")
-
-    history_id, exit_status, timestamp, duration, command = text.split("\t", 4)
-
-    return (
-        history_id,
-        command,
-        timestamp,
-        duration,
-        int(exit_status),
+    history_id, exit_status, timestamp, duration, command = stdout.decode().rstrip("\n").split(
+        "\t", 4
     )
+    return history_id, command, timestamp, duration, int(exit_status)
 
 
 async def main() -> None:
-    # Fork/spawn first, before gRPC has started any threads.
-    (
-        history_id,
-        command,
-        timestamp,
-        duration,
-        exit_status,
-    ) = await get_last_history()
+    history_id, command, timestamp, duration, exit_status = await get_last_history()
 
-    # Only now start using jerakeen/gRPC.
     try:
         async with connect(timeout=1.0) as atuin:
             status = await atuin.status()
+            captured = await atuin.history.output(history_id)
     except (AtuinError, FileNotFoundError):
-        print("Atuin daemon is not running")
+        print("Atuin daemon is not running or is incompatible")
         return
 
     print("healthy:", status.healthy)
@@ -90,9 +58,6 @@ async def main() -> None:
     print("protocol:", status.protocol)
     print("pid:", status.pid)
     print()
-
-    async with connect(timeout=1.0) as atuin:
-        captured = await atuin.semantic.output(history_id)
 
     previous = PreviousCommand(
         history_id=history_id,
@@ -104,30 +69,13 @@ async def main() -> None:
     )
 
     print(f"id:       {previous.history_id}")
-
     print(f"ran at:   {previous.timestamp}")
     print(f"duration: {previous.duration}")
     print(f"exit:     {previous.exit_status}")
-
     print("command:")
-    if previous.command:
-        print(markdown_escape_code(previous.command))
-    else:
-        print("<no command>")
-
-    print(f"command: `{previous.command}`")
-
-    print("stdout:")
-    if previous.output:
-        print(markdown_escape_code(previous.output))
-    else:
-        print("<stdout capture empty>")
-
-    print("stderr:")
-    if previous.error:
-        print(markdown_escape_code(previous.error))
-    else:
-        print("<stderr capture empty>")
+    print(markdown_escape_code(previous.command) if previous.command else "<no command>")
+    print("output:")
+    print(markdown_escape_code(previous.output) if previous.output else "<captured output empty>")
 
 
 asyncio.run(main())

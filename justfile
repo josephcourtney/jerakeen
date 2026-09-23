@@ -19,6 +19,9 @@ syntax:
 proto:
     {{PYTHON}} scripts/generate_protos.py
 
+proto-check:
+    {{PYTHON}} scripts/generate_protos.py --check
+
 lint:
     {{RUFF}} check --fix src tests
 
@@ -37,16 +40,14 @@ test-cov:
 test-live:
     CATUIN_LIVE_TEST=1 {{PYTEST}} tests/test_live_atuin.py
 
-check: syntax format lint typecheck test
+check: syntax proto-check format lint typecheck test
 
-build: proto
+build: proto-check
     {{UV}} build
-
 
 clean:
   find . -name '__pycache__' -type d -prune -exec rm -rf '{}' +
   rm -rf .coverage .coverage.* coverage.xml htmlcov
   rm -rf .cache .pytest_cache .import_linter_cache
   rm -rf dist build mutants
-  rm -rf **/.DS_Store 
-
+  rm -rf **/.DS_Store
