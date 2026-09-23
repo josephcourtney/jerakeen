@@ -6,7 +6,6 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, TypedDict
 
 import grpc
-from google.protobuf import duration_pb2
 
 from jerakeen._ids import history_id_from_proto, history_id_to_proto, record_id_from_proto
 from jerakeen._proto import common_pb2, history_pb2
@@ -64,14 +63,11 @@ class _EventCommon(TypedDict):
     author_kind: AuthorKind
 
 
-def _duration_from_ns(value: int | None) -> duration_pb2.Duration | None:
-    if value is None:
-        return None
+def _duration_parts_from_ns(value: int) -> tuple[int, int]:
     if value < 0:
         msg = "duration_ns must be non-negative"
         raise ValueError(msg)
-    seconds, nanos = divmod(value, NANOSECONDS_PER_SECOND)
-    return duration_pb2.Duration(seconds=seconds, nanos=nanos)
+    return divmod(value, NANOSECONDS_PER_SECOND)
 
 
 def _range_to_proto(value: slice | tuple[int, int]) -> common_pb2.PyStyleIdxRange:
@@ -208,9 +204,10 @@ class HistoryClient:
         duration_ns: int | None = None,
     ) -> HistoryEnd:
         request = history_pb2.EndHistoryRequest(id=history_id_to_proto(history_id), exit=exit_code)
-        duration = _duration_from_ns(duration_ns)
-        if duration is not None:
-            request.duration.CopyFrom(duration)
+        if duration_ns is not None:
+            seconds, nanos = _duration_parts_from_ns(duration_ns)
+            request.duration.seconds = seconds
+            request.duration.nanos = nanos
         reply = await call(self._stub.EndHistory(request, timeout=self._timeout))
         return HistoryEnd(
             record_id=record_id_from_proto(reply.record_id, source="EndHistoryReply.record_id"),
