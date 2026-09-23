@@ -23,12 +23,14 @@ def test_record_id_decodes_uuid() -> None:
     assert record_id_from_proto(wire) == expected
 
 
-@pytest.mark.parametrize("kind", ["history", "record"])
-def test_missing_uuid_is_protocol_error(kind: str) -> None:
-    value = common_pb2.HistoryId() if kind == "history" else common_pb2.RecordId()
-    decoder = history_id_from_proto if kind == "history" else record_id_from_proto
+def test_missing_history_uuid_is_protocol_error() -> None:
     with pytest.raises(AtuinProtocolError, match="did not contain a UUID"):
-        decoder(value)
+        history_id_from_proto(common_pb2.HistoryId())
+
+
+def test_missing_record_uuid_is_protocol_error() -> None:
+    with pytest.raises(AtuinProtocolError, match="did not contain a UUID"):
+        record_id_from_proto(common_pb2.RecordId())
 
 
 @pytest.mark.parametrize("size", [0, 1, 15, 17, 32])

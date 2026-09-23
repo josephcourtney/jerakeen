@@ -24,6 +24,7 @@ class HistoryStub(Protocol):
     def DeleteHistory(
         self,
         request_iterator: AsyncIterable[history_pb2.DeleteHistoryRequest],
+        /,
         *,
         timeout: float | None = None,
     ) -> Awaitable[history_pb2.DeleteHistoryReply]: ...
@@ -60,6 +61,7 @@ class SearchStub(Protocol):
     def Search(
         self,
         request_iterator: AsyncIterable[search_pb2.SearchRequest],
+        /,
         *,
         timeout: float | None = None,
     ) -> AsyncIterable[search_pb2.SearchResponse]: ...

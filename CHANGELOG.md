@@ -1,10 +1,10 @@
 # Changelog
 
-## 0.10.0 - 2026-09-23
+## Unreleased
 
 ### Breaking changes
 
-- Move the supported daemon snapshot from Atuin 18.19 protocol 1 to Atuin 18.23 protocol 3. Protocol 1 is no longer accepted by this release.
+- Move the supported daemon snapshot from Atuin 18.19 protocol 1 to Atuin 18.23 protocol 3. Protocol 1 is no longer accepted by this API line.
 - Remove the obsolete public `SemanticClient`, `ControlClient`, `atuin.semantic`, and `atuin.control` service surfaces because Atuin removed those daemon services.
 - Move captured-output registration and retrieval to `HistoryClient` as `register_output()` and `output()`.
 - Change history lifecycle IDs to `uuid.UUID`; `HistoryEnd` now reports the protocol-3 `record_id` and `record_idx` rather than the old history `id`/`idx` reply shape.

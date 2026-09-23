@@ -1,7 +1,7 @@
 # =================================== project ====================================
 [project]
   name = "jerakeen"
-  version = "0.10.0"
+  version = "0.9.3"
   description = "Python client and CLI for Atuin's local daemon gRPC interface."
   readme = "README.md"
   authors = [
@@ -71,7 +71,7 @@
     [tool.ruff.lint.per-file-ignores]
       "packages/core/src/cv2.pyi" = [
         "N802", # OpenCV API uses non-PEP8 function/method names.
-        "N803", # OpenCV API uses non-PEP8 argument names.
+        "N803", # OpenCV API uses non-PEP8 argument/method names.
       ]
       "tests/**/*" = [
         "ANN",     # Type annotations

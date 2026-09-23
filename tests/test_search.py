@@ -58,6 +58,18 @@ class FakeSearchStub:
 
         return replies()
 
+    def SearchCommandOutput(
+        self,
+        request: search_pb2.SearchCommandOutputRequest,
+        *,
+        timeout: float | None = None,
+    ) -> AsyncIterator[search_pb2.OutputSearchMatch]:
+        async def replies():
+            if False:
+                yield search_pb2.OutputSearchMatch()
+
+        return replies()
+
 
 class SearchTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:

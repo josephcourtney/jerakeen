@@ -1,6 +1,9 @@
+# ruff: noqa: N802
+
 from __future__ import annotations
 
 import unittest
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 import grpc
@@ -10,6 +13,9 @@ from jerakeen._ids import history_id_to_proto
 from jerakeen._proto import common_pb2, search_pb2
 from jerakeen.exceptions import AtuinConnectionError, AtuinProtocolError
 from jerakeen.search import SearchClient
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterable, AsyncIterator
 
 HISTORY_ID = UUID("00112233-4455-6677-8899-aabbccddeeff")
 
@@ -31,7 +37,29 @@ class OutputSearchStub:
             )
         ]
 
-    def SearchCommandOutput(self, request, *, timeout=None):
+    async def PrepareIndex(
+        self, request: search_pb2.PrepareIndexRequest, *, timeout: float | None = None
+    ) -> search_pb2.PrepareIndexResponse:
+        return search_pb2.PrepareIndexResponse()
+
+    def Search(
+        self,
+        requests: AsyncIterable[search_pb2.SearchRequest],
+        *,
+        timeout: float | None = None,
+    ) -> AsyncIterator[search_pb2.SearchResponse]:
+        async def stream():
+            if False:
+                yield search_pb2.SearchResponse()
+
+        return stream()
+
+    def SearchCommandOutput(
+        self,
+        request: search_pb2.SearchCommandOutputRequest,
+        *,
+        timeout: float | None = None,
+    ) -> AsyncIterator[search_pb2.OutputSearchMatch]:
         self.request = request
         self.timeout = timeout
 
