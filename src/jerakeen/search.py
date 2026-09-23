@@ -339,11 +339,11 @@ class SearchClient:
 
         async def requests() -> AsyncIterator[search_pb2.SearchRequest]:
             next_query_id = 1
-            async for query in queries:
-                if query.query_id is None:
-                    query = replace(query, query_id=next_query_id)
-                next_query_id = max(next_query_id, query.query_id + 1)
-                yield _query_to_proto(query)
+            async for search_query in queries:
+                assigned_id = next_query_id if search_query.query_id is None else search_query.query_id
+                request = replace(search_query, query_id=assigned_id)
+                next_query_id = max(next_query_id, assigned_id + 1)
+                yield _query_to_proto(request)
 
         try:
             async for reply in self._stub.Search(requests(), timeout=timeout):
