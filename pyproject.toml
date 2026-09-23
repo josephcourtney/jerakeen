@@ -74,17 +74,21 @@
         "N803", # OpenCV API uses non-PEP8 argument/method names.
       ]
       "tests/**/*" = [
-        "ANN",     # Type annotations
-        "S101",    # Use of `assert` detected
-        "SLF001",  # Private member accessed
-        "PLR2004", # Magic value used in comparison
-        "ARG001",  # Unused function argument
-        "ARG002",  # Unused method argument
-        "ARG005",  # Unused lambda argument
-        "PLC0415", # `import` should be at the top-level of a file
-        "PLC2701", # Private name import from external module
-        "INP001",  # File is part of an implicit namespace package
-        "PLC1901", # Empty string comparison simplification
+        "ANN",      # Type annotations
+        "S101",     # Use of `assert` detected
+        "SLF001",   # Private member accessed
+        "PLR2004",  # Magic value used in comparison
+        "ARG001",   # Unused function argument
+        "ARG002",   # Unused method argument
+        "ARG005",   # Unused lambda argument
+        "PLC0415",  # `import` should be at the top-level of a file
+        "PLC2701",  # Private name import from external module
+        "INP001",   # File is part of an implicit namespace package
+        "PLC1901",  # Empty string comparison simplification
+        "ASYNC109", # gRPC-compatible test doubles intentionally expose `timeout=`.
+        "RUF029",   # Async test doubles/generators intentionally satisfy async interfaces.
+        "RUF069",   # Tests verify exact forwarding of literal float timeout/score values.
+        "S604",     # False positive: Atuin models use a domain field named `shell`.
       ]
 
     [tool.ruff.lint.extend-per-file-ignores]
@@ -92,29 +96,27 @@
         "E402",
         "PLR6301",
         "hardcoded-temp-file",
-        "async-function-with-timeout",
-        "unused-async",
-        "float-equality-comparison",
-        "call-with-shell-equals-true",
-        "pytest-raises-with-multiple-statements",
-        "pytest-raises-ambiguous-pattern",
       ]
 
-      "src/jerakeen/__init__.py"    = ["non-empty-init-module"]
-      "src/jerakeen/_transport.py" = ["hardcoded-temp-file"]
-      "src/jerakeen/client.py"     = ["async-function-with-timeout"]
-      "src/jerakeen/history.py"    = ["async-function-with-timeout", "unused-async"]
-      "src/jerakeen/search.py"     = [
-        "assert",
-        "async-function-with-timeout",
-        "blind-except",
-        "raise-within-try",
-        "too-many-statements-in-try-clause",
-        "unused-async",
-      ]
+      # These exceptions describe protocol/API boundaries rather than ordinary application code.
+      "src/jerakeen/__init__.py"   = ["RUF067"] # Package version resolution is intentional import-time API metadata.
+      "src/jerakeen/_ids.py"      = ["PLR2004"] # UUID wire width is fixed by the daemon protocol at 16 bytes.
       "src/jerakeen/_interfaces.py" = ["N802"]
-      "tests/test_history.py"       = ["N802"]
-      "tests/test_search.py"        = ["N802", "too-many-public-methods"]
+      "src/jerakeen/_transport.py" = ["S108"] # `/tmp/atuin-$UID/atuin.sock` is an Atuin discovery location, not a temp-file creation.
+      "src/jerakeen/client.py"     = ["ASYNC109"] # Public timeout values are forwarded to gRPC/channel deadlines.
+      "src/jerakeen/history.py"    = ["ASYNC109", "RUF029"] # Streaming RPC adapters must preserve async iterable/signature shapes.
+      "src/jerakeen/search.py"     = [
+        "ASYNC109", # Public timeout values are forwarded to gRPC stream deadlines.
+        "BLE001",   # Background search reader preserves arbitrary task failures for waiting callers.
+        "PLW0717",  # The response loop and failure capture intentionally share one try/finally lifecycle.
+        "PLW2901",  # Stream queries are normalized with an assigned query id before encoding.
+        "RUF029",   # Single-request async generator is required by the bidirectional gRPC search RPC.
+        "S101",     # Internal stream-state assertion narrows an invariant established by __aenter__.
+        "TRY301",   # Protocol errors raised while routing responses are intentionally captured as terminal stream errors.
+      ]
+      "tests/test_history.py"       = ["N802", "PT012"]
+      "tests/test_rpc_transport.py" = ["RUF043"]
+      "tests/test_search.py"        = ["N802", "PLR0904", "RUF043"]
 
 
 [tool.ty.src]
@@ -168,6 +170,8 @@
     "integration: Tests involving real external dependencies (DB, queues, containers, external services).",
     "system: Full system / end-to-end tests treating the app as a black box.",
     "contract: Service/API or data/schema contract tests.",
+
+    # Purpose markers
     "acceptance: Requirement-driven system tests tied to user stories or acceptance criteria.",
     "regression: Prevent re-introduction of known bugs or failures.",
     "sanity: Narrow checks verifying specific bugfixes or features.",
@@ -182,15 +186,21 @@
     "drift: Model/data drift detection tests (PSI, KS, etc.).",
     "usability: Automated usability tests (accessibility, i18n).",
     "synthetic_monitoring: Synthetic production probes.",
+
+    # Technique / infra
     "snapshot: Snapshot-based tests.",
     "property_based: Property-based tests (Hypothesis).",
     "mutation: Mutation-testing related.",
     "observability: Tests asserting presence/shape of logs/metrics/traces.",
+
+    # Operational/meta
     "slow: Known slow tests.",
     "flaky: Known flaky tests under triage.",
     "legacy: Legacy tests awaiting refactor/removal.",
     "experimental: Experimental tests or tooling not yet mandatory.",
     "external_data: Tests requiring external vendor data (skip if vendor fixtures are absent).",
+
+    # Domain-specific
     "db: Database behavior tests.",
     "api: API-centric tests (HTTP/RPC).",
     "ml: ML-related tests.",
