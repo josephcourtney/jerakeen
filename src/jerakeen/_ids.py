@@ -9,7 +9,8 @@ from jerakeen.exceptions import AtuinProtocolError
 def _uuid_from_message(value: common_pb2.Uuid, *, source: str) -> UUID:
     raw = bytes(value.value)
     if len(raw) != 16:
-        raise AtuinProtocolError(f"{source} contained {len(raw)} UUID bytes; expected 16")
+        msg = f"{source} contained {len(raw)} UUID bytes; expected 16"
+        raise AtuinProtocolError(msg)
     return UUID(bytes=raw)
 
 
@@ -20,11 +21,13 @@ def history_id_to_proto(value: UUID | str) -> common_pb2.HistoryId:
 
 def history_id_from_proto(value: common_pb2.HistoryId, *, source: str = "history id") -> UUID:
     if not value.HasField("uuid"):
-        raise AtuinProtocolError(f"{source} did not contain a UUID")
+        msg = f"{source} did not contain a UUID"
+        raise AtuinProtocolError(msg)
     return _uuid_from_message(value.uuid, source=source)
 
 
 def record_id_from_proto(value: common_pb2.RecordId, *, source: str = "record id") -> UUID:
     if not value.HasField("uuid"):
-        raise AtuinProtocolError(f"{source} did not contain a UUID")
+        msg = f"{source} did not contain a UUID"
+        raise AtuinProtocolError(msg)
     return _uuid_from_message(value.uuid, source=source)

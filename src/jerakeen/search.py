@@ -71,20 +71,23 @@ def _result_from_proto(reply: search_pb2.SearchResponse) -> SearchResult:
         try:
             ids.append(UUID(bytes=bytes(raw_id)))
         except ValueError as exc:
-            raise AtuinProtocolError(
+            msg = (
                 f"search response {reply.query_id} contained a history id with "
                 f"{len(raw_id)} bytes; expected 16"
-            ) from exc
+            )
+            raise AtuinProtocolError(msg) from exc
     return SearchResult(query_id=reply.query_id, ids=tuple(ids))
 
 
 def _output_match_from_proto(reply: search_pb2.OutputSearchMatch) -> OutputSearchMatch:
     if not reply.HasField("history_id"):
-        raise AtuinProtocolError("OutputSearchMatch did not contain a history id")
+        msg = "OutputSearchMatch did not contain a history id"
+        raise AtuinProtocolError(msg)
     lines: list[OutputSearchLine] = []
     for index, line in enumerate(reply.lines):
         if not line.HasField("content"):
-            raise AtuinProtocolError(f"OutputSearchMatch.lines[{index}] did not contain content")
+            msg = f"OutputSearchMatch.lines[{index}] did not contain content"
+            raise AtuinProtocolError(msg)
         lines.append(
             OutputSearchLine(
                 line=line.line,
@@ -103,7 +106,11 @@ def _output_match_from_proto(reply: search_pb2.OutputSearchMatch) -> OutputSearc
 
 
 class SearchSession:
-    """Long-lived bidirectional search stream for interactive callers."""
+    """Long-lived bidirectional search stream for interactive callers.
+
+    Query IDs are allocated automatically when omitted. Multiple calls to ``query`` may be
+    outstanding concurrently; responses are routed to the matching caller by ``query_id``.
+    """
 
     def __init__(self, stub: SearchStub, *, timeout: float | None = 5.0) -> None:
         self._stub = stub
@@ -127,17 +134,19 @@ class SearchSession:
     def _allocate_query_id(self, requested: int | None) -> int:
         if requested is not None:
             if requested in self._pending:
-                raise ValueError(f"query_id {requested} is already outstanding")
+                msg = f"query_id {requested} is already outstanding"
+                raise ValueError(msg)
             if requested in self._expired:
-                raise ValueError(
-                    f"query_id {requested} is awaiting a stale response from a timed-out query"
-                )
+                msg = f"query_id {requested} is awaiting a stale response from a timed-out query"
+                raise ValueError(msg)
             self._next_query_id = max(self._next_query_id, requested + 1)
             return requested
+
         while self._next_query_id in self._pending or self._next_query_id in self._expired:
             self._next_query_id += 1
         if self._next_query_id > 2**64 - 1:
-            raise OverflowError("automatic search query IDs exhausted the uint64 range")
+            msg = "automatic search query IDs exhausted the uint64 range"
+            raise OverflowError(msg)
         query_id = self._next_query_id
         self._next_query_id += 1
         return query_id
@@ -162,7 +171,8 @@ class SearchSession:
                 if result.query_id in self._expired:
                     self._expired.remove(result.query_id)
                     continue
-                raise AtuinProtocolError(f"search stream returned unknown query_id {result.query_id}")
+                msg = f"search stream returned unknown query_id {result.query_id}"
+                raise AtuinProtocolError(msg)
         except asyncio.CancelledError:
             raise
         except grpc.aio.AioRpcError as exc:
@@ -179,7 +189,8 @@ class SearchSession:
 
     async def __aenter__(self) -> Self:
         if self._active:
-            raise RuntimeError("SearchSession is already active")
+            msg = "SearchSession is already active"
+            raise RuntimeError(msg)
         self._terminal_error = None
         self._queue = asyncio.Queue()
         self._pending.clear()
@@ -204,7 +215,9 @@ class SearchSession:
         if not self._active:
             if self._terminal_error is not None:
                 raise self._terminal_error
-            raise RuntimeError("SearchSession must be used as an async context manager")
+            msg = "SearchSession must be used as an async context manager"
+            raise RuntimeError(msg)
+
         if isinstance(query, str):
             query = SearchQuery(
                 query=query,
@@ -213,11 +226,13 @@ class SearchSession:
                 context=context,
                 shells=tuple(shells),
             )
+
         assigned_id = self._allocate_query_id(query.query_id)
         request = replace(query, query_id=assigned_id)
         future = asyncio.get_running_loop().create_future()
         self._pending[assigned_id] = future
         await self._queue.put(_query_to_proto(request))
+
         try:
             if self._timeout is None:
                 return await future
@@ -226,9 +241,8 @@ class SearchSession:
             self._pending.pop(assigned_id, None)
             self._expired.add(assigned_id)
             future.cancel()
-            raise AtuinTimeoutError(
-                f"Atuin search query {assigned_id} exceeded the {self._timeout:g}s deadline"
-            ) from exc
+            msg = f"Atuin search query {assigned_id} exceeded the {self._timeout:g}s deadline"
+            raise AtuinTimeoutError(msg) from exc
         except asyncio.CancelledError:
             self._pending.pop(assigned_id, None)
             self._expired.add(assigned_id)
@@ -238,14 +252,17 @@ class SearchSession:
     async def close(self) -> None:
         if not self._active and self._reader_task is None:
             return
+
         self._active = False
         self._fail_pending(RuntimeError("SearchSession closed"))
         await self._queue.put(None)
+
         stream = self._stream
         if stream is not None:
             cancel = getattr(stream, "cancel", None)
             if callable(cancel):
                 cancel()
+
         task = self._reader_task
         self._reader_task = None
         if task is not None and not task.done():
@@ -253,6 +270,7 @@ class SearchSession:
         if task is not None:
             with contextlib.suppress(asyncio.CancelledError):
                 await task
+
         self._stream = None
 
 
@@ -296,14 +314,16 @@ class SearchClient:
             async for reply in self._stub.Search(requests(), timeout=self._timeout):
                 result = _result_from_proto(reply)
                 if result.query_id != expected_id:
-                    raise AtuinProtocolError(
+                    msg = (
                         f"search response query_id {result.query_id} did not match request "
                         f"query_id {expected_id}"
                     )
+                    raise AtuinProtocolError(msg)
                 return result
         except grpc.aio.AioRpcError as exc:
             raise from_grpc_error(exc) from exc
-        raise AtuinProtocolError("search stream ended before returning a response")
+        msg = "search stream ended before returning a response"
+        raise AtuinProtocolError(msg)
 
     async def stream(
         self,
@@ -311,6 +331,12 @@ class SearchClient:
         *,
         timeout: float | None = None,
     ) -> AsyncIterator[SearchResult]:
+        """Stream search requests and responses.
+
+        The client-wide finite-RPC timeout is intentionally not applied to this potentially long-lived stream.
+        ``timeout`` is an optional deadline for the entire stream.
+        """
+
         async def requests() -> AsyncIterator[search_pb2.SearchRequest]:
             next_query_id = 1
             async for query in queries:
@@ -333,10 +359,14 @@ class SearchClient:
         context: int | None = None,
         timeout: float | None = None,
     ) -> AsyncIterator[OutputSearchMatch]:
+        """Search captured command output, yielding relevance-ranked matches."""
+
         if not 0 <= limit <= 2**32 - 1:
-            raise ValueError("limit must fit an unsigned 32-bit integer")
+            msg = "limit must fit an unsigned 32-bit integer"
+            raise ValueError(msg)
         if context is not None and not 0 <= context <= 2**32 - 1:
-            raise ValueError("context must fit an unsigned 32-bit integer")
+            msg = "context must fit an unsigned 32-bit integer"
+            raise ValueError(msg)
         request = search_pb2.SearchCommandOutputRequest(query=query, limit=limit)
         if context is not None:
             request.context = context

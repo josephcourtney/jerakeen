@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, TypedDict
 
 import grpc
 from google.protobuf import duration_pb2
@@ -50,11 +50,26 @@ _AUTHOR_TO_PROTO = {
 _PROTO_TO_AUTHOR = {value: key for key, value in _AUTHOR_TO_PROTO.items()}
 
 
+class _EventCommon(TypedDict):
+    id: UUID
+    timestamp: datetime
+    timestamp_ns: int
+    command: str
+    cwd: str
+    session: str
+    hostname: str
+    author: str | None
+    intent: str | None
+    shell: str | None
+    author_kind: AuthorKind
+
+
 def _duration_from_ns(value: int | None) -> duration_pb2.Duration | None:
     if value is None:
         return None
     if value < 0:
-        raise ValueError("duration_ns must be non-negative")
+        msg = "duration_ns must be non-negative"
+        raise ValueError(msg)
     seconds, nanos = divmod(value, NANOSECONDS_PER_SECOND)
     return duration_pb2.Duration(seconds=seconds, nanos=nanos)
 
@@ -64,9 +79,11 @@ def _range_to_proto(value: slice | tuple[int, int]) -> common_pb2.PyStyleIdxRang
         start, end = value
     else:
         if value.step not in {None, 1}:
-            raise ValueError("output range slices do not support a step")
+            msg = "output range slices do not support a step"
+            raise ValueError(msg)
         if value.start is None or value.stop is None:
-            raise ValueError("output range slices require both start and stop")
+            msg = "output range slices require both start and stop"
+            raise ValueError(msg)
         start, end = value.start, value.stop
     return common_pb2.PyStyleIdxRange(start=start, end=end)
 
@@ -93,11 +110,12 @@ def _capture_to_proto(value: CommandCapture) -> history_pb2.CommandCapture:
     return capture
 
 
-def _event_common(entry: history_pb2.HistoryEntry, *, source: str) -> dict[str, Any]:
+def _event_common(entry: history_pb2.HistoryEntry, *, source: str) -> _EventCommon:
     try:
         author_kind = _PROTO_TO_AUTHOR[entry.author_kind]
     except KeyError as exc:
-        raise AtuinProtocolError(f"{source} contained unknown author_kind {entry.author_kind}") from exc
+        msg = f"{source} contained unknown author_kind {entry.author_kind}"
+        raise AtuinProtocolError(msg) from exc
     return {
         "id": history_id_from_proto(entry.id, source=f"{source}.id"),
         "timestamp": datetime.fromtimestamp(entry.timestamp / NANOSECONDS_PER_SECOND, tz=UTC),
@@ -115,18 +133,22 @@ def _event_common(entry: history_pb2.HistoryEntry, *, source: str) -> dict[str, 
 
 def _event_from_proto(reply: history_pb2.TailHistoryReply) -> HistoryEventRecord:
     kind = reply.WhichOneof("event")
+    if kind == "started":
+        return HistoryStarted(**_event_common(reply.started, source="TailHistoryReply.started"))
+    if kind == "ended":
+        return HistoryEnded(
+            **_event_common(reply.ended, source="TailHistoryReply.ended"),
+            exit_code=reply.ended.exit,
+            duration_ns=reply.ended.duration,
+        )
+    if kind == "cancelled":
+        return HistoryCancelled(
+            **_event_common(reply.cancelled, source="TailHistoryReply.cancelled")
+        )
     if kind == "lagged":
         return HistoryLagged(dropped=reply.lagged.dropped)
-    if kind not in {"started", "ended", "cancelled"}:
-        raise AtuinProtocolError("TailHistoryReply did not contain a recognized event")
-
-    entry = getattr(reply, kind)
-    common = _event_common(entry, source=f"TailHistoryReply.{kind}")
-    if kind == "started":
-        return HistoryStarted(**common)
-    if kind == "ended":
-        return HistoryEnded(**common, exit_code=entry.exit, duration_ns=entry.duration)
-    return HistoryCancelled(**common)
+    msg = "TailHistoryReply did not contain a recognized event"
+    raise AtuinProtocolError(msg)
 
 
 class HistoryClient:
@@ -229,12 +251,16 @@ class HistoryClient:
         return HistoryRebuild(version=reply.version, protocol=reply.protocol)
 
     async def shutdown(self) -> bool:
-        reply = await call(self._stub.Shutdown(history_pb2.ShutdownRequest(), timeout=self._timeout))
+        reply = await call(
+            self._stub.Shutdown(history_pb2.ShutdownRequest(), timeout=self._timeout)
+        )
         return reply.accepted
 
     async def tail(self, *, timeout: float | None = None) -> AsyncIterator[HistoryEventRecord]:
         try:
-            async for reply in self._stub.TailHistory(history_pb2.TailHistoryRequest(), timeout=timeout):
+            async for reply in self._stub.TailHistory(
+                history_pb2.TailHistoryRequest(), timeout=timeout
+            ):
                 yield _event_from_proto(reply)
         except grpc.aio.AioRpcError as exc:
             raise from_grpc_error(exc) from exc
@@ -277,7 +303,8 @@ class HistoryClient:
         chunks: list[OutputChunk] = []
         for index, chunk in enumerate(reply.chunks):
             if not chunk.HasField("line_range"):
-                raise AtuinProtocolError(f"GetCommandOutputResponse.chunks[{index}] has no line range")
+                msg = f"GetCommandOutputResponse.chunks[{index}] has no line range"
+                raise AtuinProtocolError(msg)
             chunks.append(
                 OutputChunk(
                     start_line=chunk.line_range.start,
@@ -286,7 +313,8 @@ class HistoryClient:
                 )
             )
         if not reply.HasField("meta"):
-            raise AtuinProtocolError("GetCommandOutputResponse did not contain capture metadata")
+            msg = "GetCommandOutputResponse did not contain capture metadata"
+            raise AtuinProtocolError(msg)
         return CommandOutput(
             text="\n".join(chunk.content for chunk in chunks),
             total_bytes=reply.total_bytes,
@@ -324,11 +352,8 @@ class HistoryClient:
         handle = HistoryCommand(start=started, exit_code=exit_code)
         try:
             yield handle
-        except BaseException as original:
-            try:
-                await self.cancel(started.id)
-            except BaseException as cleanup:
-                original.add_note(f"Jerakeen also failed to cancel history entry: {cleanup}")
+        except BaseException:
+            await self.cancel(started.id)
             raise
         else:
             await self.end(

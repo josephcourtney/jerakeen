@@ -41,19 +41,22 @@ class Atuin:
     @property
     def version(self) -> str:
         if self._status is None:
-            raise RuntimeError("Atuin client has not completed its compatibility handshake")
+            msg = "Atuin client has not completed its compatibility handshake"
+            raise RuntimeError(msg)
         return self._status.version
 
     @property
     def protocol(self) -> int:
         if self._status is None:
-            raise RuntimeError("Atuin client has not completed its compatibility handshake")
+            msg = "Atuin client has not completed its compatibility handshake"
+            raise RuntimeError(msg)
         return self._status.protocol
 
     @property
     def compatibility(self) -> Compatibility:
         if self._compatibility is None:
-            raise RuntimeError("Atuin client has not completed its compatibility handshake")
+            msg = "Atuin client has not completed its compatibility handshake"
+            raise RuntimeError(msg)
         return self._compatibility
 
     @classmethod
@@ -72,9 +75,8 @@ class Atuin:
             await asyncio.wait_for(channel.channel_ready(), timeout=timeout)
         except TimeoutError as exc:
             await channel.close()
-            raise AtuinConnectionError(
-                f"timed out connecting to Atuin daemon at {description}"
-            ) from exc
+            msg = f"timed out connecting to Atuin daemon at {description}"
+            raise AtuinConnectionError(msg) from exc
 
         client = cls(channel, description=description, rpc_timeout=rpc_timeout)
         try:

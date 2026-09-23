@@ -199,14 +199,16 @@ class SearchQuery:
 
     def __post_init__(self) -> None:
         if self.query_id is not None and not 0 <= self.query_id <= 2**64 - 1:
-            raise ValueError("query_id must fit an unsigned 64-bit integer")
+            msg = "query_id must fit an unsigned 64-bit integer"
+            raise ValueError(msg)
 
         if self.filter_mode is FilterMode.GLOBAL:
             return
 
         context = self.context
         if context is None:
-            raise ValueError(f"{self.filter_mode.value} search requires a SearchContext")
+            msg = f"{self.filter_mode.value} search requires a SearchContext"
+            raise ValueError(msg)
 
         required = {
             FilterMode.HOST: ("hostname", context.hostname),
@@ -217,11 +219,13 @@ class SearchQuery:
         if self.filter_mode in required:
             field, value = required[self.filter_mode]
             if not value:
-                raise ValueError(f"{self.filter_mode.value} search requires context.{field}")
+                msg = f"{self.filter_mode.value} search requires context.{field}"
+                raise ValueError(msg)
             return
 
         if self.filter_mode is FilterMode.WORKSPACE and not (context.git_root or context.cwd):
-            raise ValueError("workspace search requires context.git_root or context.cwd")
+            msg = "workspace search requires context.git_root or context.cwd"
+            raise ValueError(msg)
 
 
 @dataclass(frozen=True, slots=True)
