@@ -142,9 +142,7 @@ def _event_from_proto(reply: history_pb2.TailHistoryReply) -> HistoryEventRecord
             duration_ns=reply.ended.duration,
         )
     if kind == "cancelled":
-        return HistoryCancelled(
-            **_event_common(reply.cancelled, source="TailHistoryReply.cancelled")
-        )
+        return HistoryCancelled(**_event_common(reply.cancelled, source="TailHistoryReply.cancelled"))
     if kind == "lagged":
         return HistoryLagged(dropped=reply.lagged.dropped)
     msg = "TailHistoryReply did not contain a recognized event"
@@ -251,16 +249,12 @@ class HistoryClient:
         return HistoryRebuild(version=reply.version, protocol=reply.protocol)
 
     async def shutdown(self) -> bool:
-        reply = await call(
-            self._stub.Shutdown(history_pb2.ShutdownRequest(), timeout=self._timeout)
-        )
+        reply = await call(self._stub.Shutdown(history_pb2.ShutdownRequest(), timeout=self._timeout))
         return reply.accepted
 
     async def tail(self, *, timeout: float | None = None) -> AsyncIterator[HistoryEventRecord]:
         try:
-            async for reply in self._stub.TailHistory(
-                history_pb2.TailHistoryRequest(), timeout=timeout
-            ):
+            async for reply in self._stub.TailHistory(history_pb2.TailHistoryRequest(), timeout=timeout):
                 yield _event_from_proto(reply)
         except grpc.aio.AioRpcError as exc:
             raise from_grpc_error(exc) from exc

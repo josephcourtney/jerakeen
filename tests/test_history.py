@@ -375,7 +375,8 @@ class HistoryTests(unittest.IsolatedAsyncioTestCase):
     async def test_command_context_cancels_on_exception(self) -> None:
         with pytest.raises(RuntimeError, match="boom"):
             async with self.client.command("pwd", cwd="/tmp", session="s", hostname="h"):
-                raise RuntimeError("boom")
+                msg = "boom"
+                raise RuntimeError(msg)
         assert "end" not in self.stub.requests
         assert isinstance(self.stub.requests["cancel"], history_pb2.CancelHistoryRequest)
 

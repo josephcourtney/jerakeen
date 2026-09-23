@@ -10,10 +10,7 @@ ROOT = Path(__file__).parents[1]
 
 
 def rpc_shapes(service):
-    return {
-        method.name: (method.client_streaming, method.server_streaming)
-        for method in service.methods
-    }
+    return {method.name: (method.client_streaming, method.server_streaming) for method in service.methods}
 
 
 def test_protocol_source_and_generated_file_sets_are_exact() -> None:
@@ -22,7 +19,9 @@ def test_protocol_source_and_generated_file_sets_are_exact() -> None:
         "history.proto",
         "search.proto",
     }
-    assert {path.name for path in (ROOT / "src" / "jerakeen" / "_proto").iterdir() if path.name != "__pycache__"} == {
+    assert {
+        path.name for path in (ROOT / "src" / "jerakeen" / "_proto").iterdir() if path.name != "__pycache__"
+    } == {
         "__init__.py",
         "common_pb2.py",
         "common_pb2.pyi",

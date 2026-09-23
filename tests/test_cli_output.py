@@ -73,9 +73,7 @@ class CliOutputTests(unittest.TestCase):
         assert started["id"] == str(HISTORY_ID)
         assert started["author_kind"] == "user"
 
-        ended = _cli_output.event_to_dict(
-            HistoryEnded(**event_common(), exit_code=7, duration_ns=123)
-        )
+        ended = _cli_output.event_to_dict(HistoryEnded(**event_common(), exit_code=7, duration_ns=123))
         assert ended["event"] == "ended"
         assert ended["exit"] == 7
         assert ended["duration_ns"] == 123

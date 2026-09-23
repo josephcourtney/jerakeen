@@ -117,53 +117,49 @@ def _stream_stream(handler, request_type, response_type):
 
 
 def add_services(server: grpc.aio.Server, daemon: FakeDaemon) -> None:
-    server.add_generic_rpc_handlers(
-        (
-            grpc.method_handlers_generic_handler(
-                "history.History",
-                {
-                    "Status": _unary_unary(
-                        daemon.status, history_pb2.StatusRequest, history_pb2.StatusReply
-                    ),
-                    "StartHistory": _unary_unary(
-                        daemon.start_history,
-                        history_pb2.StartHistoryRequest,
-                        history_pb2.StartHistoryReply,
-                    ),
-                    "EndHistory": _unary_unary(
-                        daemon.end_history,
-                        history_pb2.EndHistoryRequest,
-                        history_pb2.EndHistoryReply,
-                    ),
-                    "TailHistory": _unary_stream(
-                        daemon.tail_history,
-                        history_pb2.TailHistoryRequest,
-                        history_pb2.TailHistoryReply,
-                    ),
-                    "GetCommandOutput": _unary_unary(
-                        daemon.get_command_output,
-                        history_pb2.GetCommandOutputRequest,
-                        history_pb2.GetCommandOutputResponse,
-                    ),
-                },
-            ),
-            grpc.method_handlers_generic_handler(
-                "search.Search",
-                {
-                    "Search": _stream_stream(
-                        daemon.search,
-                        search_pb2.SearchRequest,
-                        search_pb2.SearchResponse,
-                    ),
-                    "SearchCommandOutput": _unary_stream(
-                        daemon.search_command_output,
-                        search_pb2.SearchCommandOutputRequest,
-                        search_pb2.OutputSearchMatch,
-                    ),
-                },
-            ),
-        )
-    )
+    server.add_generic_rpc_handlers((
+        grpc.method_handlers_generic_handler(
+            "history.History",
+            {
+                "Status": _unary_unary(daemon.status, history_pb2.StatusRequest, history_pb2.StatusReply),
+                "StartHistory": _unary_unary(
+                    daemon.start_history,
+                    history_pb2.StartHistoryRequest,
+                    history_pb2.StartHistoryReply,
+                ),
+                "EndHistory": _unary_unary(
+                    daemon.end_history,
+                    history_pb2.EndHistoryRequest,
+                    history_pb2.EndHistoryReply,
+                ),
+                "TailHistory": _unary_stream(
+                    daemon.tail_history,
+                    history_pb2.TailHistoryRequest,
+                    history_pb2.TailHistoryReply,
+                ),
+                "GetCommandOutput": _unary_unary(
+                    daemon.get_command_output,
+                    history_pb2.GetCommandOutputRequest,
+                    history_pb2.GetCommandOutputResponse,
+                ),
+            },
+        ),
+        grpc.method_handlers_generic_handler(
+            "search.Search",
+            {
+                "Search": _stream_stream(
+                    daemon.search,
+                    search_pb2.SearchRequest,
+                    search_pb2.SearchResponse,
+                ),
+                "SearchCommandOutput": _unary_stream(
+                    daemon.search_command_output,
+                    search_pb2.SearchCommandOutputRequest,
+                    search_pb2.OutputSearchMatch,
+                ),
+            },
+        ),
+    ))
 
 
 class GrpcIntegrationTests(unittest.IsolatedAsyncioTestCase):
@@ -232,9 +228,7 @@ class GrpcIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_compatibility_can_be_inspected_without_feature_guarantee(self) -> None:
         self.daemon.protocol = 999
-        async with await Atuin.connect(
-            tcp=f"127.0.0.1:{self.port}", check_compatibility=False
-        ) as atuin:
+        async with await Atuin.connect(tcp=f"127.0.0.1:{self.port}", check_compatibility=False) as atuin:
             assert atuin.protocol == 999
             assert not atuin.compatibility.compatible
 

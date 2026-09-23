@@ -91,7 +91,7 @@ def event_to_dict(event: HistoryEventRecord) -> EventDict:
         exit_code = None
         duration_ns = None
 
-    history_event = cast(HistoryEvent, event)
+    history_event = cast("HistoryEvent", event)
     return {
         "event": state,
         "timestamp": history_event.timestamp.astimezone().isoformat(timespec="milliseconds"),
