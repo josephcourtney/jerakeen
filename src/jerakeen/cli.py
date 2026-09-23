@@ -27,7 +27,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output",
         action="store_true",
-        help="On END events, query Semantic.CommandOutput for captured output.",
+        help="On END events, query History.GetCommandOutput for captured output.",
     )
     parser.add_argument(
         "--connect-timeout",

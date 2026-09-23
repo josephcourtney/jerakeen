@@ -3,41 +3,103 @@ from __future__ import annotations
 import time
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import grpc
+from google.protobuf import duration_pb2
 
-from jerakeen._proto import history_pb2
+from jerakeen._ids import history_id_from_proto, history_id_to_proto, record_id_from_proto
+from jerakeen._proto import common_pb2, history_pb2
 from jerakeen._rpc import call
-from jerakeen.exceptions import AtuinProtocolError, from_grpc_error
+from jerakeen.exceptions import AtuinNotFoundError, AtuinProtocolError, from_grpc_error
 from jerakeen.models import (
+    AuthorKind,
+    CommandCapture,
+    CommandCaptureMeta,
+    CommandOutput,
     DaemonStatus,
     HistoryCancel,
+    HistoryCancelled,
     HistoryCommand,
+    HistoryDelete,
     HistoryEnd,
     HistoryEnded,
     HistoryEventRecord,
+    HistoryLagged,
+    HistoryRebuild,
     HistoryStart,
     HistoryStarted,
+    OutputChunk,
 )
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
+    from collections.abc import AsyncIterator, Iterable
     from pathlib import Path
+    from uuid import UUID
 
     from jerakeen._interfaces import HistoryStub
 
 NANOSECONDS_PER_SECOND = 1_000_000_000
+_DELETE_CHUNK_SIZE = 50_000
+
+_AUTHOR_TO_PROTO = {
+    AuthorKind.UNSPECIFIED: history_pb2.AUTHOR_KIND_UNSPECIFIED,
+    AuthorKind.USER: history_pb2.AUTHOR_KIND_USER,
+    AuthorKind.AGENT: history_pb2.AUTHOR_KIND_AGENT,
+}
+_PROTO_TO_AUTHOR = {value: key for key, value in _AUTHOR_TO_PROTO.items()}
 
 
-def _event_from_proto(reply: history_pb2.TailHistoryReply) -> HistoryEventRecord:
-    if not reply.HasField("history"):
-        msg = "TailHistoryReply did not contain a history entry"
-        raise AtuinProtocolError(msg)
+def _duration_from_ns(value: int | None) -> duration_pb2.Duration | None:
+    if value is None:
+        return None
+    if value < 0:
+        raise ValueError("duration_ns must be non-negative")
+    seconds, nanos = divmod(value, NANOSECONDS_PER_SECOND)
+    return duration_pb2.Duration(seconds=seconds, nanos=nanos)
 
-    entry = reply.history
-    common = {
-        "id": entry.id,
+
+def _range_to_proto(value: slice | tuple[int, int]) -> common_pb2.PyStyleIdxRange:
+    if isinstance(value, tuple):
+        start, end = value
+    else:
+        if value.step not in {None, 1}:
+            raise ValueError("output range slices do not support a step")
+        if value.start is None or value.stop is None:
+            raise ValueError("output range slices require both start and stop")
+        start, end = value.start, value.stop
+    return common_pb2.PyStyleIdxRange(start=start, end=end)
+
+
+def _meta_from_proto(value: history_pb2.CommandCaptureMeta) -> CommandCaptureMeta:
+    return CommandCaptureMeta(
+        observed_bytes=value.output_observed_bytes,
+        terminal_width=value.terminal_width,
+        terminal_height=value.terminal_height,
+    )
+
+
+def _capture_to_proto(value: CommandCapture) -> history_pb2.CommandCapture:
+    capture = history_pb2.CommandCapture(
+        output_start=value.output_start,
+        meta=history_pb2.CommandCaptureMeta(
+            output_observed_bytes=value.meta.observed_bytes,
+            terminal_width=value.meta.terminal_width,
+            terminal_height=value.meta.terminal_height,
+        ),
+    )
+    if value.output_end is not None:
+        capture.output_end = value.output_end
+    return capture
+
+
+def _event_common(entry: history_pb2.HistoryEntry, *, source: str) -> dict[str, Any]:
+    try:
+        author_kind = _PROTO_TO_AUTHOR[entry.author_kind]
+    except KeyError as exc:
+        raise AtuinProtocolError(f"{source} contained unknown author_kind {entry.author_kind}") from exc
+    return {
+        "id": history_id_from_proto(entry.id, source=f"{source}.id"),
         "timestamp": datetime.fromtimestamp(entry.timestamp / NANOSECONDS_PER_SECOND, tz=UTC),
         "timestamp_ns": entry.timestamp,
         "command": entry.command,
@@ -47,23 +109,28 @@ def _event_from_proto(reply: history_pb2.TailHistoryReply) -> HistoryEventRecord
         "author": entry.author or None,
         "intent": entry.intent or None,
         "shell": entry.shell or None,
+        "author_kind": author_kind,
     }
 
-    if reply.kind == history_pb2.HISTORY_EVENT_KIND_STARTED:
-        return HistoryStarted(**common)
-    if reply.kind == history_pb2.HISTORY_EVENT_KIND_ENDED:
-        return HistoryEnded(
-            **common,
-            exit_code=entry.exit,
-            duration_ns=entry.duration,
-        )
 
-    msg = f"unknown history event kind: {reply.kind}"
-    raise AtuinProtocolError(msg)
+def _event_from_proto(reply: history_pb2.TailHistoryReply) -> HistoryEventRecord:
+    kind = reply.WhichOneof("event")
+    if kind == "lagged":
+        return HistoryLagged(dropped=reply.lagged.dropped)
+    if kind not in {"started", "ended", "cancelled"}:
+        raise AtuinProtocolError("TailHistoryReply did not contain a recognized event")
+
+    entry = getattr(reply, kind)
+    common = _event_common(entry, source=f"TailHistoryReply.{kind}")
+    if kind == "started":
+        return HistoryStarted(**common)
+    if kind == "ended":
+        return HistoryEnded(**common, exit_code=entry.exit, duration_ns=entry.duration)
+    return HistoryCancelled(**common)
 
 
 class HistoryClient:
-    """Pythonic wrapper around Atuin's History gRPC service."""
+    """Pythonic wrapper around Atuin's protocol-3 History gRPC service."""
 
     def __init__(self, stub: HistoryStub, *, timeout: float | None = 5.0) -> None:
         self._stub = stub
@@ -88,6 +155,7 @@ class HistoryClient:
         author: str | None = None,
         intent: str | None = None,
         shell: str | None = None,
+        author_kind: AuthorKind = AuthorKind.UNSPECIFIED,
         timestamp_ns: int | None = None,
     ) -> HistoryStart:
         reply = await call(
@@ -101,63 +169,132 @@ class HistoryClient:
                     author=author or "",
                     intent=intent or "",
                     shell=shell or "",
+                    author_kind=_AUTHOR_TO_PROTO[author_kind],
                 ),
                 timeout=self._timeout,
             )
         )
-        return HistoryStart(id=reply.id, version=reply.version, protocol=reply.protocol)
-
-    async def end(
-        self,
-        history_id: str,
-        *,
-        exit_code: int,
-        duration_ns: int,
-    ) -> HistoryEnd:
-        reply = await call(
-            self._stub.EndHistory(
-                history_pb2.EndHistoryRequest(
-                    id=history_id,
-                    exit=exit_code,
-                    duration=duration_ns,
-                ),
-                timeout=self._timeout,
-            )
-        )
-        return HistoryEnd(
-            id=reply.id,
-            idx=reply.idx,
+        return HistoryStart(
+            id=history_id_from_proto(reply.id, source="StartHistoryReply.id"),
             version=reply.version,
             protocol=reply.protocol,
         )
 
-    async def cancel(self, history_id: str) -> HistoryCancel:
+    async def end(
+        self,
+        history_id: UUID | str,
+        *,
+        exit_code: int,
+        duration_ns: int | None = None,
+    ) -> HistoryEnd:
+        request = history_pb2.EndHistoryRequest(id=history_id_to_proto(history_id), exit=exit_code)
+        duration = _duration_from_ns(duration_ns)
+        if duration is not None:
+            request.duration.CopyFrom(duration)
+        reply = await call(self._stub.EndHistory(request, timeout=self._timeout))
+        return HistoryEnd(
+            record_id=record_id_from_proto(reply.record_id, source="EndHistoryReply.record_id"),
+            record_idx=reply.record_idx,
+            version=reply.version,
+            protocol=reply.protocol,
+        )
+
+    async def cancel(self, history_id: UUID | str) -> HistoryCancel:
         reply = await call(
             self._stub.CancelHistory(
-                history_pb2.CancelHistoryRequest(id=history_id),
+                history_pb2.CancelHistoryRequest(id=history_id_to_proto(history_id)),
                 timeout=self._timeout,
             )
         )
         return HistoryCancel(version=reply.version, protocol=reply.protocol)
+
+    async def delete(self, history_ids: Iterable[UUID | str]) -> HistoryDelete:
+        async def requests() -> AsyncIterator[history_pb2.DeleteHistoryRequest]:
+            chunk: list[common_pb2.HistoryId] = []
+            for history_id in history_ids:
+                chunk.append(history_id_to_proto(history_id))
+                if len(chunk) == _DELETE_CHUNK_SIZE:
+                    yield history_pb2.DeleteHistoryRequest(ids=chunk)
+                    chunk = []
+            if chunk:
+                yield history_pb2.DeleteHistoryRequest(ids=chunk)
+
+        reply = await call(self._stub.DeleteHistory(requests(), timeout=self._timeout))
+        return HistoryDelete(deleted=reply.deleted, version=reply.version, protocol=reply.protocol)
+
+    async def rebuild(self) -> HistoryRebuild:
+        reply = await call(
+            self._stub.RebuildHistory(history_pb2.RebuildHistoryRequest(), timeout=self._timeout)
+        )
+        return HistoryRebuild(version=reply.version, protocol=reply.protocol)
 
     async def shutdown(self) -> bool:
         reply = await call(self._stub.Shutdown(history_pb2.ShutdownRequest(), timeout=self._timeout))
         return reply.accepted
 
     async def tail(self, *, timeout: float | None = None) -> AsyncIterator[HistoryEventRecord]:
-        """Yield live history events.
-
-        The client-wide unary RPC timeout is intentionally not applied to this long-lived
-        stream. Pass ``timeout`` only when a deadline for the entire tail stream is desired.
-        """
-
         try:
             async for reply in self._stub.TailHistory(history_pb2.TailHistoryRequest(), timeout=timeout):
-                if not reply.HasField("history"):
-                    continue
                 yield _event_from_proto(reply)
         except grpc.aio.AioRpcError as exc:
             raise from_grpc_error(exc) from exc
+
+    async def register_output(self, history_id: UUID | str, capture: CommandCapture) -> None:
+        await call(
+            self._stub.RegisterCommandOutput(
+                history_pb2.RegisterCommandOutputRequest(
+                    history_id=history_id_to_proto(history_id),
+                    capture=_capture_to_proto(capture),
+                ),
+                timeout=self._timeout,
+            )
+        )
+
+    async def output(
+        self,
+        history_id: UUID | str,
+        *,
+        ranges: Iterable[slice | tuple[int, int]] | None = None,
+    ) -> CommandOutput | None:
+        selected = (
+            [common_pb2.PyStyleIdxRange(start=0, end=-1)]
+            if ranges is None
+            else [_range_to_proto(value) for value in ranges]
+        )
+        try:
+            reply = await call(
+                self._stub.GetCommandOutput(
+                    history_pb2.GetCommandOutputRequest(
+                        id=history_id_to_proto(history_id),
+                        line_ranges=selected,
+                    ),
+                    timeout=self._timeout,
+                )
+            )
+        except AtuinNotFoundError:
+            return None
+
+        chunks: list[OutputChunk] = []
+        for index, chunk in enumerate(reply.chunks):
+            if not chunk.HasField("line_range"):
+                raise AtuinProtocolError(f"GetCommandOutputResponse.chunks[{index}] has no line range")
+            chunks.append(
+                OutputChunk(
+                    start_line=chunk.line_range.start,
+                    end_line=chunk.line_range.end,
+                    content=chunk.content,
+                )
+            )
+        if not reply.HasField("meta"):
+            raise AtuinProtocolError("GetCommandOutputResponse did not contain capture metadata")
+        return CommandOutput(
+            text="\n".join(chunk.content for chunk in chunks),
+            total_bytes=reply.total_bytes,
+            total_lines=reply.total_lines,
+            chunks=tuple(chunks),
+            truncated=reply.truncated,
+            meta=_meta_from_proto(reply.meta),
+        )
 
     @asynccontextmanager
     async def command(
@@ -170,15 +307,9 @@ class HistoryClient:
         author: str | None = None,
         intent: str | None = None,
         shell: str | None = None,
+        author_kind: AuthorKind = AuthorKind.UNSPECIFIED,
         exit_code: int = 0,
     ) -> AsyncIterator[HistoryCommand]:
-        """Manage a history lifecycle around command execution.
-
-        The yielded handle starts with ``exit_code`` but callers may update
-        ``handle.exit_code`` after the command actually runs. ``duration_ns`` may likewise be
-        supplied explicitly; otherwise monotonic elapsed time is used.
-        """
-
         started_at = time.monotonic_ns()
         started = await self.start(
             command,
@@ -188,12 +319,16 @@ class HistoryClient:
             author=author,
             intent=intent,
             shell=shell,
+            author_kind=author_kind,
         )
         handle = HistoryCommand(start=started, exit_code=exit_code)
         try:
             yield handle
-        except BaseException:
-            await self.cancel(started.id)
+        except BaseException as original:
+            try:
+                await self.cancel(started.id)
+            except BaseException as cleanup:
+                original.add_note(f"Jerakeen also failed to cancel history entry: {cleanup}")
             raise
         else:
             await self.end(

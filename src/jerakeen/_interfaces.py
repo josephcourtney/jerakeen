@@ -5,64 +5,72 @@ from typing import TYPE_CHECKING, Protocol
 if TYPE_CHECKING:
     from collections.abc import AsyncIterable, Awaitable
 
-    from jerakeen._proto import control_pb2, history_pb2, search_pb2, semantic_pb2
+    from jerakeen._proto import history_pb2, search_pb2
 
 
 class HistoryStub(Protocol):
-    def StartHistory(  # inherited from protocol
+    def StartHistory(
         self, request: history_pb2.StartHistoryRequest, *, timeout: float | None = None
     ) -> Awaitable[history_pb2.StartHistoryReply]: ...
 
-    def EndHistory(  # inherited from protocol
+    def EndHistory(
         self, request: history_pb2.EndHistoryRequest, *, timeout: float | None = None
     ) -> Awaitable[history_pb2.EndHistoryReply]: ...
 
-    def CancelHistory(  # inherited from protocol
+    def CancelHistory(
         self, request: history_pb2.CancelHistoryRequest, *, timeout: float | None = None
     ) -> Awaitable[history_pb2.CancelHistoryReply]: ...
 
-    def TailHistory(  # inherited from protocol
+    def DeleteHistory(
+        self,
+        request_iterator: AsyncIterable[history_pb2.DeleteHistoryRequest],
+        *,
+        timeout: float | None = None,
+    ) -> Awaitable[history_pb2.DeleteHistoryReply]: ...
+
+    def RebuildHistory(
+        self, request: history_pb2.RebuildHistoryRequest, *, timeout: float | None = None
+    ) -> Awaitable[history_pb2.RebuildHistoryReply]: ...
+
+    def TailHistory(
         self, request: history_pb2.TailHistoryRequest, *, timeout: float | None = None
     ) -> AsyncIterable[history_pb2.TailHistoryReply]: ...
 
-    def Status(  # inherited from protocol
+    def Status(
         self, request: history_pb2.StatusRequest, *, timeout: float | None = None
     ) -> Awaitable[history_pb2.StatusReply]: ...
 
-    def Shutdown(  # inherited from protocol
+    def Shutdown(
         self, request: history_pb2.ShutdownRequest, *, timeout: float | None = None
     ) -> Awaitable[history_pb2.ShutdownReply]: ...
 
-
-class SemanticStub(Protocol):
-    def RecordCommands(  # inherited from protocol
+    def RegisterCommandOutput(
         self,
-        request_iterator: AsyncIterable[semantic_pb2.CommandCapture],
-        /,
+        request: history_pb2.RegisterCommandOutputRequest,
         *,
         timeout: float | None = None,
-    ) -> Awaitable[semantic_pb2.RecordCommandsReply]: ...
+    ) -> Awaitable[history_pb2.RegisterCommandOutputResponse]: ...
 
-    def CommandOutput(  # inherited from protocol
-        self, request: semantic_pb2.CommandOutputRequest, *, timeout: float | None = None
-    ) -> Awaitable[semantic_pb2.CommandOutputReply]: ...
+    def GetCommandOutput(
+        self, request: history_pb2.GetCommandOutputRequest, *, timeout: float | None = None
+    ) -> Awaitable[history_pb2.GetCommandOutputResponse]: ...
 
 
 class SearchStub(Protocol):
-    def Search(  # inherited from protocol
+    def Search(
         self,
         request_iterator: AsyncIterable[search_pb2.SearchRequest],
-        /,
         *,
         timeout: float | None = None,
     ) -> AsyncIterable[search_pb2.SearchResponse]: ...
 
-    def PrepareIndex(  # inherited from protocol
+    def PrepareIndex(
         self, request: search_pb2.PrepareIndexRequest, *, timeout: float | None = None
     ) -> Awaitable[search_pb2.PrepareIndexResponse]: ...
 
-
-class ControlStub(Protocol):
-    def SendEvent(  # inherited from protocol
-        self, request: control_pb2.SendEventRequest, *, timeout: float | None = None
-    ) -> Awaitable[control_pb2.SendEventResponse]: ...
+    def SearchCommandOutput(
+        self,
+        request: search_pb2.SearchCommandOutputRequest,
+        *,
+        timeout: float | None = None,
+    ) -> AsyncIterable[search_pb2.OutputSearchMatch]: ...

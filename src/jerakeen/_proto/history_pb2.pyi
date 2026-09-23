@@ -1,30 +1,16 @@
-from google.protobuf.internal import enum_type_wrapper as _enum_type_wrapper
+from collections.abc import Sequence
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import message as _message
-from collections.abc import Mapping as _Mapping
-from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
+from . import common_pb2
+from google.protobuf import duration_pb2
 
 DESCRIPTOR: _descriptor.FileDescriptor
 
-class HistoryEventKind(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
-    __slots__ = ()
-    HISTORY_EVENT_KIND_UNSPECIFIED: _ClassVar[HistoryEventKind]
-    HISTORY_EVENT_KIND_STARTED: _ClassVar[HistoryEventKind]
-    HISTORY_EVENT_KIND_ENDED: _ClassVar[HistoryEventKind]
-HISTORY_EVENT_KIND_UNSPECIFIED: HistoryEventKind
-HISTORY_EVENT_KIND_STARTED: HistoryEventKind
-HISTORY_EVENT_KIND_ENDED: HistoryEventKind
+AUTHOR_KIND_UNSPECIFIED: int
+AUTHOR_KIND_USER: int
+AUTHOR_KIND_AGENT: int
 
 class StartHistoryRequest(_message.Message):
-    __slots__ = ("timestamp", "command", "cwd", "session", "hostname", "author", "intent", "shell")
-    TIMESTAMP_FIELD_NUMBER: _ClassVar[int]
-    COMMAND_FIELD_NUMBER: _ClassVar[int]
-    CWD_FIELD_NUMBER: _ClassVar[int]
-    SESSION_FIELD_NUMBER: _ClassVar[int]
-    HOSTNAME_FIELD_NUMBER: _ClassVar[int]
-    AUTHOR_FIELD_NUMBER: _ClassVar[int]
-    INTENT_FIELD_NUMBER: _ClassVar[int]
-    SHELL_FIELD_NUMBER: _ClassVar[int]
     timestamp: int
     command: str
     cwd: str
@@ -33,99 +19,78 @@ class StartHistoryRequest(_message.Message):
     author: str
     intent: str
     shell: str
-    def __init__(self, timestamp: _Optional[int] = ..., command: _Optional[str] = ..., cwd: _Optional[str] = ..., session: _Optional[str] = ..., hostname: _Optional[str] = ..., author: _Optional[str] = ..., intent: _Optional[str] = ..., shell: _Optional[str] = ...) -> None: ...
+    author_kind: int
+    def __init__(self, **kwargs: object) -> None: ...
 
 class EndHistoryRequest(_message.Message):
-    __slots__ = ("id", "exit", "duration")
-    ID_FIELD_NUMBER: _ClassVar[int]
-    EXIT_FIELD_NUMBER: _ClassVar[int]
-    DURATION_FIELD_NUMBER: _ClassVar[int]
-    id: str
+    id: common_pb2.HistoryId
     exit: int
-    duration: int
-    def __init__(self, id: _Optional[str] = ..., exit: _Optional[int] = ..., duration: _Optional[int] = ...) -> None: ...
+    duration: duration_pb2.Duration
+    def __init__(self, **kwargs: object) -> None: ...
 
 class CancelHistoryRequest(_message.Message):
-    __slots__ = ("id",)
-    ID_FIELD_NUMBER: _ClassVar[int]
-    id: str
-    def __init__(self, id: _Optional[str] = ...) -> None: ...
+    id: common_pb2.HistoryId
+    def __init__(self, **kwargs: object) -> None: ...
 
 class StartHistoryReply(_message.Message):
-    __slots__ = ("id", "version", "protocol")
-    ID_FIELD_NUMBER: _ClassVar[int]
-    VERSION_FIELD_NUMBER: _ClassVar[int]
-    PROTOCOL_FIELD_NUMBER: _ClassVar[int]
-    id: str
+    id: common_pb2.HistoryId
     version: str
     protocol: int
-    def __init__(self, id: _Optional[str] = ..., version: _Optional[str] = ..., protocol: _Optional[int] = ...) -> None: ...
+    def __init__(self, **kwargs: object) -> None: ...
 
 class EndHistoryReply(_message.Message):
-    __slots__ = ("id", "idx", "version", "protocol")
-    ID_FIELD_NUMBER: _ClassVar[int]
-    IDX_FIELD_NUMBER: _ClassVar[int]
-    VERSION_FIELD_NUMBER: _ClassVar[int]
-    PROTOCOL_FIELD_NUMBER: _ClassVar[int]
-    id: str
-    idx: int
+    record_id: common_pb2.RecordId
+    record_idx: int
     version: str
     protocol: int
-    def __init__(self, id: _Optional[str] = ..., idx: _Optional[int] = ..., version: _Optional[str] = ..., protocol: _Optional[int] = ...) -> None: ...
+    def __init__(self, **kwargs: object) -> None: ...
 
 class CancelHistoryReply(_message.Message):
-    __slots__ = ("version", "protocol")
-    VERSION_FIELD_NUMBER: _ClassVar[int]
-    PROTOCOL_FIELD_NUMBER: _ClassVar[int]
     version: str
     protocol: int
-    def __init__(self, version: _Optional[str] = ..., protocol: _Optional[int] = ...) -> None: ...
+    def __init__(self, **kwargs: object) -> None: ...
+
+class DeleteHistoryRequest(_message.Message):
+    ids: Sequence[common_pb2.HistoryId]
+    def __init__(self, **kwargs: object) -> None: ...
+
+class DeleteHistoryReply(_message.Message):
+    deleted: int
+    version: str
+    protocol: int
+    def __init__(self, **kwargs: object) -> None: ...
+
+class RebuildHistoryRequest(_message.Message):
+    def __init__(self, **kwargs: object) -> None: ...
+
+class RebuildHistoryReply(_message.Message):
+    version: str
+    protocol: int
+    def __init__(self, **kwargs: object) -> None: ...
 
 class StatusRequest(_message.Message):
-    __slots__ = ()
-    def __init__(self) -> None: ...
+    def __init__(self, **kwargs: object) -> None: ...
 
 class StatusReply(_message.Message):
-    __slots__ = ("healthy", "version", "pid", "protocol")
-    HEALTHY_FIELD_NUMBER: _ClassVar[int]
-    VERSION_FIELD_NUMBER: _ClassVar[int]
-    PID_FIELD_NUMBER: _ClassVar[int]
-    PROTOCOL_FIELD_NUMBER: _ClassVar[int]
     healthy: bool
     version: str
     pid: int
     protocol: int
-    def __init__(self, healthy: _Optional[bool] = ..., version: _Optional[str] = ..., pid: _Optional[int] = ..., protocol: _Optional[int] = ...) -> None: ...
+    def __init__(self, **kwargs: object) -> None: ...
 
 class ShutdownRequest(_message.Message):
-    __slots__ = ()
-    def __init__(self) -> None: ...
+    def __init__(self, **kwargs: object) -> None: ...
 
 class ShutdownReply(_message.Message):
-    __slots__ = ("accepted",)
-    ACCEPTED_FIELD_NUMBER: _ClassVar[int]
     accepted: bool
-    def __init__(self, accepted: _Optional[bool] = ...) -> None: ...
+    def __init__(self, **kwargs: object) -> None: ...
 
 class TailHistoryRequest(_message.Message):
-    __slots__ = ()
-    def __init__(self) -> None: ...
+    def __init__(self, **kwargs: object) -> None: ...
 
 class HistoryEntry(_message.Message):
-    __slots__ = ("timestamp", "id", "command", "cwd", "session", "hostname", "author", "intent", "exit", "duration", "shell")
-    TIMESTAMP_FIELD_NUMBER: _ClassVar[int]
-    ID_FIELD_NUMBER: _ClassVar[int]
-    COMMAND_FIELD_NUMBER: _ClassVar[int]
-    CWD_FIELD_NUMBER: _ClassVar[int]
-    SESSION_FIELD_NUMBER: _ClassVar[int]
-    HOSTNAME_FIELD_NUMBER: _ClassVar[int]
-    AUTHOR_FIELD_NUMBER: _ClassVar[int]
-    INTENT_FIELD_NUMBER: _ClassVar[int]
-    EXIT_FIELD_NUMBER: _ClassVar[int]
-    DURATION_FIELD_NUMBER: _ClassVar[int]
-    SHELL_FIELD_NUMBER: _ClassVar[int]
     timestamp: int
-    id: str
+    id: common_pb2.HistoryId
     command: str
     cwd: str
     session: str
@@ -135,12 +100,55 @@ class HistoryEntry(_message.Message):
     exit: int
     duration: int
     shell: str
-    def __init__(self, timestamp: _Optional[int] = ..., id: _Optional[str] = ..., command: _Optional[str] = ..., cwd: _Optional[str] = ..., session: _Optional[str] = ..., hostname: _Optional[str] = ..., author: _Optional[str] = ..., intent: _Optional[str] = ..., exit: _Optional[int] = ..., duration: _Optional[int] = ..., shell: _Optional[str] = ...) -> None: ...
+    author_kind: int
+    def __init__(self, **kwargs: object) -> None: ...
+
+class Lagged(_message.Message):
+    dropped: int
+    def __init__(self, **kwargs: object) -> None: ...
 
 class TailHistoryReply(_message.Message):
-    __slots__ = ("kind", "history")
-    KIND_FIELD_NUMBER: _ClassVar[int]
-    HISTORY_FIELD_NUMBER: _ClassVar[int]
-    kind: HistoryEventKind
-    history: HistoryEntry
-    def __init__(self, kind: _Optional[_Union[HistoryEventKind, str]] = ..., history: _Optional[_Union[HistoryEntry, _Mapping]] = ...) -> None: ...
+    started: HistoryEntry
+    ended: HistoryEntry
+    cancelled: HistoryEntry
+    lagged: Lagged
+    def __init__(self, **kwargs: object) -> None: ...
+
+class CommandCaptureMeta(_message.Message):
+    output_observed_bytes: int
+    terminal_width: int
+    terminal_height: int
+    def __init__(self, **kwargs: object) -> None: ...
+
+class CommandCapture(_message.Message):
+    output_start: str
+    output_end: str
+    meta: CommandCaptureMeta
+    def __init__(self, **kwargs: object) -> None: ...
+
+class RegisterCommandOutputRequest(_message.Message):
+    history_id: common_pb2.HistoryId
+    capture: CommandCapture
+    def __init__(self, **kwargs: object) -> None: ...
+
+class RegisterCommandOutputResponse(_message.Message):
+    def __init__(self, **kwargs: object) -> None: ...
+
+class GetCommandOutputRequest(_message.Message):
+    id: common_pb2.HistoryId
+    line_ranges: Sequence[common_pb2.PyStyleIdxRange]
+    def __init__(self, **kwargs: object) -> None: ...
+
+class GetCommandOutputResponse(_message.Message):
+    chunks: Sequence[OutputChunk]
+    total_bytes: int
+    total_lines: int
+    meta: CommandCaptureMeta
+    truncated: bool
+    def __init__(self, **kwargs: object) -> None: ...
+
+class OutputChunk(_message.Message):
+    line_range: common_pb2.PyStyleIdxRange
+    content: str
+    def __init__(self, **kwargs: object) -> None: ...
+

@@ -4,19 +4,12 @@ import asyncio
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Self
 
-from jerakeen._proto import (
-    control_pb2_grpc,
-    history_pb2_grpc,
-    search_pb2_grpc,
-    semantic_pb2_grpc,
-)
+from jerakeen._proto import history_pb2_grpc, search_pb2_grpc
 from jerakeen._transport import create_channel, discover_target
 from jerakeen.compatibility import Compatibility, assess_compatibility
-from jerakeen.control import ControlClient
 from jerakeen.exceptions import AtuinConnectionError
 from jerakeen.history import HistoryClient
 from jerakeen.search import SearchClient
-from jerakeen.semantic import SemanticClient
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -43,29 +36,24 @@ class Atuin:
         self.description = description
         self.rpc_timeout = rpc_timeout
         self.history = HistoryClient(history_pb2_grpc.HistoryStub(channel), timeout=rpc_timeout)
-        self.semantic = SemanticClient(semantic_pb2_grpc.SemanticStub(channel), timeout=rpc_timeout)
         self.search = SearchClient(search_pb2_grpc.SearchStub(channel), timeout=rpc_timeout)
-        self.control = ControlClient(control_pb2_grpc.ControlStub(channel), timeout=rpc_timeout)
 
     @property
     def version(self) -> str:
         if self._status is None:
-            msg = "Atuin client has not completed its compatibility handshake"
-            raise RuntimeError(msg)
+            raise RuntimeError("Atuin client has not completed its compatibility handshake")
         return self._status.version
 
     @property
     def protocol(self) -> int:
         if self._status is None:
-            msg = "Atuin client has not completed its compatibility handshake"
-            raise RuntimeError(msg)
+            raise RuntimeError("Atuin client has not completed its compatibility handshake")
         return self._status.protocol
 
     @property
     def compatibility(self) -> Compatibility:
         if self._compatibility is None:
-            msg = "Atuin client has not completed its compatibility handshake"
-            raise RuntimeError(msg)
+            raise RuntimeError("Atuin client has not completed its compatibility handshake")
         return self._compatibility
 
     @classmethod
@@ -84,8 +72,9 @@ class Atuin:
             await asyncio.wait_for(channel.channel_ready(), timeout=timeout)
         except TimeoutError as exc:
             await channel.close()
-            msg = f"timed out connecting to Atuin daemon at {description}"
-            raise AtuinConnectionError(msg) from exc
+            raise AtuinConnectionError(
+                f"timed out connecting to Atuin daemon at {description}"
+            ) from exc
 
         client = cls(channel, description=description, rpc_timeout=rpc_timeout)
         try:

@@ -1,113 +1,285 @@
 from __future__ import annotations
 
-import importlib
-import re
+import argparse
+import ast
+import filecmp
+import shutil
 import sys
+import tempfile
+from importlib.resources import files
 from pathlib import Path
 
+from google.protobuf import descriptor_pb2
 from grpc_tools import protoc
 
 ROOT = Path(__file__).resolve().parents[1]
 PROTO_DIR = ROOT / "proto" / "atuin"
 OUT_DIR = ROOT / "src" / "jerakeen" / "_proto"
-PROTO_NAMES = ("control", "history", "search", "semantic")
-PROTOS = [PROTO_DIR / f"{name}.proto" for name in PROTO_NAMES]
+PROTO_NAMES = ("common", "history", "search")
+PROTOS = tuple(PROTO_DIR / f"{name}.proto" for name in PROTO_NAMES)
+
+_SCALAR_TYPES = {
+    descriptor_pb2.FieldDescriptorProto.TYPE_DOUBLE: "float",
+    descriptor_pb2.FieldDescriptorProto.TYPE_FLOAT: "float",
+    descriptor_pb2.FieldDescriptorProto.TYPE_INT64: "int",
+    descriptor_pb2.FieldDescriptorProto.TYPE_UINT64: "int",
+    descriptor_pb2.FieldDescriptorProto.TYPE_INT32: "int",
+    descriptor_pb2.FieldDescriptorProto.TYPE_FIXED64: "int",
+    descriptor_pb2.FieldDescriptorProto.TYPE_FIXED32: "int",
+    descriptor_pb2.FieldDescriptorProto.TYPE_BOOL: "bool",
+    descriptor_pb2.FieldDescriptorProto.TYPE_STRING: "str",
+    descriptor_pb2.FieldDescriptorProto.TYPE_BYTES: "bytes",
+    descriptor_pb2.FieldDescriptorProto.TYPE_UINT32: "int",
+    descriptor_pb2.FieldDescriptorProto.TYPE_SFIXED32: "int",
+    descriptor_pb2.FieldDescriptorProto.TYPE_SFIXED64: "int",
+    descriptor_pb2.FieldDescriptorProto.TYPE_SINT32: "int",
+    descriptor_pb2.FieldDescriptorProto.TYPE_SINT64: "int",
+    descriptor_pb2.FieldDescriptorProto.TYPE_ENUM: "int",
+}
 
 
-def _fix_package_imports() -> None:
-    """Make grpc_tools output use package-relative pb2 imports."""
-
-    pattern = re.compile(r"^import (\w+_pb2) as (\w+__pb2)$", re.MULTILINE)
-    for path in OUT_DIR.glob("*_pb2_grpc.py"):
-        text = path.read_text(encoding="utf-8")
-        text = pattern.sub(r"from . import \1 as \2", text)
-        path.write_text(text, encoding="utf-8")
-
-def _add_descriptor_typing() -> None:
-    """Expose the module-level DESCRIPTOR in generated protobuf type stubs."""
-
-    for path in OUT_DIR.glob("*_pb2.pyi"):
-        text = path.read_text(encoding="utf-8")
-        import_line = "from google.protobuf import descriptor as _descriptor\n"
-        if import_line not in text:
-            text = import_line + text
-        marker = "DESCRIPTOR: _descriptor.FileDescriptor\n\n"
-        if marker not in text:
-            # Put DESCRIPTOR after imports and before generated declarations.
-            lines = text.splitlines()
-            index = 0
-            while index < len(lines) and (
-                lines[index].startswith("from ")
-                or lines[index].startswith("import ")
-                or not lines[index]
-            ):
-                index += 1
-            lines[index:index] = ["", "DESCRIPTOR: _descriptor.FileDescriptor", ""]
-            text = "\n".join(lines) + "\n"
-        path.write_text(text, encoding="utf-8")
+def _extract_serialized_descriptor(path: Path) -> bytes:
+    module = ast.parse(path.read_text(encoding="utf-8"))
+    for node in ast.walk(module):
+        if not isinstance(node, ast.Call) or not node.args:
+            continue
+        func = node.func
+        if not (
+            isinstance(func, ast.Attribute)
+            and func.attr == "AddSerializedFile"
+            and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[0].value, bytes)
+        ):
+            continue
+        return node.args[0].value
+    raise RuntimeError(f"could not find serialized descriptor in {path}")
 
 
-def _generate_grpc_type_stubs() -> None:
-    """Generate lightweight async-client .pyi files for gRPC stubs."""
+def _dependency_import(dependency: str) -> str:
+    if dependency == "common.proto":
+        return "from . import common_pb2"
+    if dependency == "google/protobuf/duration.proto":
+        return "from google.protobuf import duration_pb2"
+    raise RuntimeError(f"unsupported protobuf dependency: {dependency}")
 
-    sys.path.insert(0, str(OUT_DIR))
-    try:
-        for name in PROTO_NAMES:
-            module = importlib.import_module(f"{name}_pb2")
-            lines = [
-                "from collections.abc import AsyncIterable, Awaitable",
-                "import grpc",
-                f"from . import {name}_pb2",
-                "",
-            ]
-            for service in module.DESCRIPTOR.services_by_name.values():
-                lines.append(f"class {service.name}Stub:")
-                lines.append("    def __init__(self, channel: grpc.aio.Channel) -> None: ...")
-                for method in service.methods:
-                    input_type = f"{name}_pb2.{method.input_type.name}"
-                    output_type = f"{name}_pb2.{method.output_type.name}"
-                    if method.client_streaming:
-                        arg = f"request_iterator: AsyncIterable[{input_type}]"
-                    else:
-                        arg = f"request: {input_type}"
-                    if method.server_streaming:
-                        result = f"AsyncIterable[{output_type}]"
-                    else:
-                        result = f"Awaitable[{output_type}]"
-                    lines.append(
-                        f"    def {method.name}(self, {arg}, *, "
-                        f"timeout: float | None = ...) -> {result}: ..."
-                    )
-                lines.append("")
-            (OUT_DIR / f"{name}_pb2_grpc.pyi").write_text(
-                "\n".join(lines), encoding="utf-8"
+
+def _render_pb2(name: str, serialized: bytes, descriptor: descriptor_pb2.FileDescriptorProto) -> str:
+    imports: list[str] = []
+    for dependency in descriptor.dependency:
+        if dependency == "common.proto":
+            imports.append("from . import common_pb2 as common__pb2")
+        elif dependency == "google/protobuf/duration.proto":
+            imports.append(
+                "from google.protobuf import duration_pb2 as google_dot_protobuf_dot_duration__pb2"
             )
-    finally:
-        sys.path.pop(0)
+        else:
+            raise RuntimeError(f"unsupported protobuf dependency: {dependency}")
+    imports_text = "\n".join(imports)
+    if imports_text:
+        imports_text += "\n"
+    return (
+        "# Generated by scripts/generate_protos.py. DO NOT EDIT!\n"
+        f"# source: {name}.proto\n"
+        "from google.protobuf import descriptor_pool as _descriptor_pool\n"
+        "from google.protobuf import symbol_database as _symbol_database\n"
+        "from google.protobuf.internal import builder as _builder\n"
+        f"{imports_text}"
+        "_sym_db = _symbol_database.Default()\n"
+        f"DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile({serialized!r})\n"
+        "_builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, globals())\n"
+        f"_builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'jerakeen._proto.{name}_pb2', globals())\n"
+    )
 
 
-def main() -> int:
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    (OUT_DIR / "__init__.py").touch()
+def _message_type(type_name: str, package: str) -> str:
+    local_prefix = f".{package}."
+    if type_name.startswith(local_prefix):
+        return type_name[len(local_prefix) :]
+    if type_name.startswith(".common."):
+        return f"common_pb2.{type_name.removeprefix('.common.')}"
+    if type_name == ".google.protobuf.Duration":
+        return "duration_pb2.Duration"
+    raise RuntimeError(f"unsupported protobuf type: {type_name}")
+
+
+def _field_type(field: descriptor_pb2.FieldDescriptorProto, package: str) -> str:
+    if field.type == descriptor_pb2.FieldDescriptorProto.TYPE_MESSAGE:
+        value = _message_type(field.type_name, package)
+    else:
+        try:
+            value = _SCALAR_TYPES[field.type]
+        except KeyError as exc:
+            raise RuntimeError(f"unsupported protobuf field type: {field.type}") from exc
+    if field.label == descriptor_pb2.FieldDescriptorProto.LABEL_REPEATED:
+        return f"Sequence[{value}]"
+    return value
+
+
+def _render_pb2_pyi(descriptor: descriptor_pb2.FileDescriptorProto) -> str:
+    lines = [
+        "from collections.abc import Sequence",
+        "from google.protobuf import descriptor as _descriptor",
+        "from google.protobuf import message as _message",
+    ]
+    lines.extend(_dependency_import(dependency) for dependency in descriptor.dependency)
+    lines.extend(["", "DESCRIPTOR: _descriptor.FileDescriptor", ""])
+    for enum in descriptor.enum_type:
+        for value in enum.value:
+            lines.append(f"{value.name}: int")
+        lines.append("")
+    for message in descriptor.message_type:
+        lines.append(f"class {message.name}(_message.Message):")
+        for field in message.field:
+            lines.append(f"    {field.name}: {_field_type(field, descriptor.package)}")
+        lines.append("    def __init__(self, **kwargs: object) -> None: ...")
+        lines.append("")
+    return "\n".join(lines) + "\n"
+
+
+def _rpc_shape(method: descriptor_pb2.MethodDescriptorProto) -> str:
+    if method.client_streaming and method.server_streaming:
+        return "stream_stream"
+    if method.client_streaming:
+        return "stream_unary"
+    if method.server_streaming:
+        return "unary_stream"
+    return "unary_unary"
+
+
+def _short_type(value: str) -> str:
+    return value.rsplit(".", 1)[-1]
+
+
+def _render_grpc(name: str, descriptor: descriptor_pb2.FileDescriptorProto) -> str:
+    lines = [
+        "# Generated by scripts/generate_protos.py. DO NOT EDIT!",
+        "from __future__ import annotations",
+        "",
+        "import grpc",
+        f"from . import {name}_pb2 as {name}__pb2",
+        "",
+    ]
+    for service in descriptor.service:
+        full_service = f"{descriptor.package}.{service.name}"
+        lines.append(f"class {service.name}Stub:")
+        lines.append("    def __init__(self, channel: grpc.aio.Channel) -> None:")
+        for method in service.method:
+            lines.extend(
+                [
+                    f"        self.{method.name} = channel.{_rpc_shape(method)}(",
+                    f"            '/{full_service}/{method.name}',",
+                    f"            request_serializer={name}__pb2.{_short_type(method.input_type)}.SerializeToString,",
+                    f"            response_deserializer={name}__pb2.{_short_type(method.output_type)}.FromString,",
+                    "        )",
+                ]
+            )
+        if not service.method:
+            lines.append("        pass")
+        lines.append("")
+    return "\n".join(lines) + "\n"
+
+
+def _render_grpc_pyi(name: str, descriptor: descriptor_pb2.FileDescriptorProto) -> str:
+    lines = [
+        "from collections.abc import AsyncIterable, Awaitable",
+        "import grpc",
+        f"from . import {name}_pb2",
+        "",
+    ]
+    for service in descriptor.service:
+        lines.append(f"class {service.name}Stub:")
+        lines.append("    def __init__(self, channel: grpc.aio.Channel) -> None: ...")
+        for method in service.method:
+            input_type = f"{name}_pb2.{_short_type(method.input_type)}"
+            output_type = f"{name}_pb2.{_short_type(method.output_type)}"
+            argument = (
+                f"request_iterator: AsyncIterable[{input_type}]"
+                if method.client_streaming
+                else f"request: {input_type}"
+            )
+            result = (
+                f"AsyncIterable[{output_type}]"
+                if method.server_streaming
+                else f"Awaitable[{output_type}]"
+            )
+            lines.append(
+                f"    def {method.name}(self, {argument}, *, timeout: float | None = ...) -> {result}: ..."
+            )
+        lines.append("")
+    return "\n".join(lines) + "\n"
+
+
+def _generate(out_dir: Path) -> None:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    raw_dir = out_dir.parent / f".{out_dir.name}-raw"
+    shutil.rmtree(raw_dir, ignore_errors=True)
+    raw_dir.mkdir(parents=True)
+    include_dir = Path(str(files("grpc_tools").joinpath("_proto")))
     rc = protoc.main(
         [
             "grpc_tools.protoc",
             f"-I{PROTO_DIR}",
-            f"--python_out={OUT_DIR}",
-            f"--pyi_out={OUT_DIR}",
-            f"--grpc_python_out={OUT_DIR}",
+            f"-I{include_dir}",
+            f"--python_out={raw_dir}",
             *(str(proto) for proto in PROTOS),
         ]
     )
     if rc != 0:
-        return rc
+        raise RuntimeError(f"protoc exited with status {rc}")
 
-    _fix_package_imports()
-    _add_descriptor_typing()
-    _generate_grpc_type_stubs()
+    try:
+        for path in out_dir.glob("*_pb2*.py*"):
+            path.unlink()
+        (out_dir / "__init__.py").write_text("", encoding="utf-8")
+        for name in PROTO_NAMES:
+            serialized = _extract_serialized_descriptor(raw_dir / f"{name}_pb2.py")
+            descriptor = descriptor_pb2.FileDescriptorProto.FromString(serialized)
+            (out_dir / f"{name}_pb2.py").write_text(
+                _render_pb2(name, serialized, descriptor), encoding="utf-8"
+            )
+            (out_dir / f"{name}_pb2.pyi").write_text(
+                _render_pb2_pyi(descriptor), encoding="utf-8"
+            )
+            if descriptor.service:
+                (out_dir / f"{name}_pb2_grpc.py").write_text(
+                    _render_grpc(name, descriptor), encoding="utf-8"
+                )
+                (out_dir / f"{name}_pb2_grpc.pyi").write_text(
+                    _render_grpc_pyi(name, descriptor), encoding="utf-8"
+                )
+    finally:
+        shutil.rmtree(raw_dir, ignore_errors=True)
+
+
+def _check() -> int:
+    with tempfile.TemporaryDirectory() as directory:
+        generated = Path(directory) / "_proto"
+        _generate(generated)
+        expected = sorted(path.name for path in generated.iterdir())
+        actual = sorted(path.name for path in OUT_DIR.iterdir() if path.name != "__pycache__")
+        if expected != actual:
+            print(f"generated file set differs: expected {expected}, found {actual}", file=sys.stderr)
+            return 1
+        mismatches = [
+            name
+            for name in expected
+            if not filecmp.cmp(generated / name, OUT_DIR / name, shallow=False)
+        ]
+        if mismatches:
+            print("generated protobuf files are stale: " + ", ".join(mismatches), file=sys.stderr)
+            return 1
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--check", action="store_true")
+    args = parser.parse_args()
+    if args.check:
+        return _check()
+    _generate(OUT_DIR)
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

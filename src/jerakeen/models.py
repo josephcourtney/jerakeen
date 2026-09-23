@@ -1,12 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from datetime import datetime
-    from uuid import UUID
+from uuid import UUID
 
 
 @dataclass(frozen=True, slots=True)
@@ -17,9 +14,15 @@ class DaemonStatus:
     protocol: int
 
 
+class AuthorKind(StrEnum):
+    UNSPECIFIED = "unspecified"
+    USER = "user"
+    AGENT = "agent"
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class HistoryEvent:
-    id: str
+    id: UUID
     timestamp: datetime
     timestamp_ns: int
     command: str
@@ -29,6 +32,7 @@ class HistoryEvent:
     author: str | None
     intent: str | None
     shell: str | None
+    author_kind: AuthorKind
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -42,26 +46,49 @@ class HistoryEnded(HistoryEvent):
     duration_ns: int
 
 
-type HistoryEventRecord = HistoryStarted | HistoryEnded
+@dataclass(frozen=True, slots=True, kw_only=True)
+class HistoryCancelled(HistoryEvent):
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class HistoryLagged:
+    dropped: int
+
+
+type HistoryEventRecord = HistoryStarted | HistoryEnded | HistoryCancelled | HistoryLagged
 
 
 @dataclass(frozen=True, slots=True)
 class HistoryStart:
-    id: str
+    id: UUID
     version: str
     protocol: int
 
 
 @dataclass(frozen=True, slots=True)
 class HistoryEnd:
-    id: str
-    idx: int
+    record_id: UUID
+    record_idx: int
     version: str
     protocol: int
 
 
 @dataclass(frozen=True, slots=True)
 class HistoryCancel:
+    version: str
+    protocol: int
+
+
+@dataclass(frozen=True, slots=True)
+class HistoryDelete:
+    deleted: int
+    version: str
+    protocol: int
+
+
+@dataclass(frozen=True, slots=True)
+class HistoryRebuild:
     version: str
     protocol: int
 
@@ -75,7 +102,7 @@ class HistoryCommand:
     duration_ns: int | None = None
 
     @property
-    def id(self) -> str:
+    def id(self) -> UUID:
         return self.start.id
 
     @property
@@ -88,8 +115,25 @@ class HistoryCommand:
 
 
 @dataclass(frozen=True, slots=True)
-class OutputLine:
-    line_number: int
+class CommandCaptureMeta:
+    observed_bytes: int
+    terminal_width: int
+    terminal_height: int
+
+
+@dataclass(frozen=True, slots=True)
+class CommandCapture:
+    output_start: str
+    meta: CommandCaptureMeta
+    output_end: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class OutputChunk:
+    """One returned output span; start/end line numbers are inclusive."""
+
+    start_line: int
+    end_line: int
     content: str
 
 
@@ -98,21 +142,33 @@ class CommandOutput:
     text: str
     total_bytes: int
     total_lines: int
-    lines: tuple[OutputLine, ...]
+    chunks: tuple[OutputChunk, ...]
     truncated: bool
-    observed_bytes: int
+    meta: CommandCaptureMeta
+
+    @property
+    def observed_bytes(self) -> int:
+        return self.meta.observed_bytes
 
 
 @dataclass(frozen=True, slots=True)
-class CommandCapture:
-    prompt: str
-    command: str
-    output: str
-    exit_code: int | None = None
-    history_id: str | None = None
-    session_id: str | None = None
-    output_truncated: bool = False
-    output_observed_bytes: int = 0
+class HighlightedText:
+    raw: str
+    open: int
+    close: int
+
+
+@dataclass(frozen=True, slots=True)
+class OutputSearchLine:
+    line: int
+    content: HighlightedText
+
+
+@dataclass(frozen=True, slots=True)
+class OutputSearchMatch:
+    history_id: UUID
+    lines: tuple[OutputSearchLine, ...]
+    score: float
 
 
 class FilterMode(StrEnum):
@@ -143,16 +199,14 @@ class SearchQuery:
 
     def __post_init__(self) -> None:
         if self.query_id is not None and not 0 <= self.query_id <= 2**64 - 1:
-            msg = "query_id must fit an unsigned 64-bit integer"
-            raise ValueError(msg)
+            raise ValueError("query_id must fit an unsigned 64-bit integer")
 
         if self.filter_mode is FilterMode.GLOBAL:
             return
 
         context = self.context
         if context is None:
-            msg = f"{self.filter_mode.value} search requires a SearchContext"
-            raise ValueError(msg)
+            raise ValueError(f"{self.filter_mode.value} search requires a SearchContext")
 
         required = {
             FilterMode.HOST: ("hostname", context.hostname),
@@ -163,13 +217,11 @@ class SearchQuery:
         if self.filter_mode in required:
             field, value = required[self.filter_mode]
             if not value:
-                msg = f"{self.filter_mode.value} search requires context.{field}"
-                raise ValueError(msg)
+                raise ValueError(f"{self.filter_mode.value} search requires context.{field}")
             return
 
         if self.filter_mode is FilterMode.WORKSPACE and not (context.git_root or context.cwd):
-            msg = "workspace search requires context.git_root or context.cwd"
-            raise ValueError(msg)
+            raise ValueError("workspace search requires context.git_root or context.cwd")
 
 
 @dataclass(frozen=True, slots=True)

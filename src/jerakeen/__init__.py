@@ -6,7 +6,6 @@ from jerakeen.compatibility import (
     VENDORED_ATUIN_VERSION,
     Compatibility,
 )
-from jerakeen.control import ControlClient
 from jerakeen.exceptions import (
     AtuinCompatibilityError,
     AtuinConnectionError,
@@ -19,25 +18,33 @@ from jerakeen.exceptions import (
 )
 from jerakeen.history import HistoryClient
 from jerakeen.models import (
+    AuthorKind,
     CommandCapture,
+    CommandCaptureMeta,
     CommandOutput,
     DaemonStatus,
     FilterMode,
+    HighlightedText,
     HistoryCancel,
+    HistoryCancelled,
     HistoryCommand,
+    HistoryDelete,
     HistoryEnd,
     HistoryEnded,
     HistoryEvent,
     HistoryEventRecord,
+    HistoryLagged,
+    HistoryRebuild,
     HistoryStart,
     HistoryStarted,
-    OutputLine,
+    OutputChunk,
+    OutputSearchLine,
+    OutputSearchMatch,
     SearchContext,
     SearchQuery,
     SearchResult,
 )
 from jerakeen.search import SearchClient, SearchSession
-from jerakeen.semantic import SemanticClient
 
 try:
     __version__ = version("jerakeen")
@@ -56,27 +63,34 @@ __all__ = [
     "AtuinRpcError",
     "AtuinTimeoutError",
     "AtuinUnsupportedError",
+    "AuthorKind",
     "CommandCapture",
+    "CommandCaptureMeta",
     "CommandOutput",
     "Compatibility",
-    "ControlClient",
     "DaemonStatus",
     "FilterMode",
+    "HighlightedText",
     "HistoryCancel",
+    "HistoryCancelled",
     "HistoryClient",
     "HistoryCommand",
+    "HistoryDelete",
     "HistoryEnd",
     "HistoryEnded",
     "HistoryEvent",
     "HistoryEventRecord",
+    "HistoryLagged",
+    "HistoryRebuild",
     "HistoryStart",
     "HistoryStarted",
-    "OutputLine",
+    "OutputChunk",
+    "OutputSearchLine",
+    "OutputSearchMatch",
     "SearchClient",
     "SearchContext",
     "SearchQuery",
     "SearchResult",
     "SearchSession",
-    "SemanticClient",
     "connect",
 ]
