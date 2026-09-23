@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.10.0 - 2026-09-23
+
 ### Breaking changes
 
 - Move the supported daemon snapshot from Atuin 18.19 protocol 1 to Atuin 18.23 protocol 3. Protocol 1 is no longer accepted by this API line.
