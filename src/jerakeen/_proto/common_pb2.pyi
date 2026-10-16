@@ -32,3 +32,7 @@ class HighlightedText(_message.Message):
     raw: str
     def __init__(self, **kwargs: object) -> None: ...
 
+class Lagged(_message.Message):
+    dropped: int
+    def __init__(self, **kwargs: object) -> None: ...
+

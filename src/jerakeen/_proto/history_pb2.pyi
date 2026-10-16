@@ -68,6 +68,15 @@ class RebuildHistoryReply(_message.Message):
     protocol: int
     def __init__(self, **kwargs: object) -> None: ...
 
+class CompactStoreRequest(_message.Message):
+    def __init__(self, **kwargs: object) -> None: ...
+
+class CompactStoreReply(_message.Message):
+    rewritten: int
+    version: str
+    protocol: int
+    def __init__(self, **kwargs: object) -> None: ...
+
 class StatusRequest(_message.Message):
     def __init__(self, **kwargs: object) -> None: ...
 
@@ -103,15 +112,11 @@ class HistoryEntry(_message.Message):
     author_kind: int
     def __init__(self, **kwargs: object) -> None: ...
 
-class Lagged(_message.Message):
-    dropped: int
-    def __init__(self, **kwargs: object) -> None: ...
-
 class TailHistoryReply(_message.Message):
     started: HistoryEntry
     ended: HistoryEntry
     cancelled: HistoryEntry
-    lagged: Lagged
+    lagged: common_pb2.Lagged
     def __init__(self, **kwargs: object) -> None: ...
 
 class CommandCaptureMeta(_message.Message):

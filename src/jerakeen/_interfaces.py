@@ -33,6 +33,10 @@ class HistoryStub(Protocol):
         self, request: history_pb2.RebuildHistoryRequest, *, timeout: float | None = None
     ) -> Awaitable[history_pb2.RebuildHistoryReply]: ...
 
+    def CompactStore(
+        self, request: history_pb2.CompactStoreRequest, *, timeout: float | None = None
+    ) -> Awaitable[history_pb2.CompactStoreReply]: ...
+
     def TailHistory(
         self, request: history_pb2.TailHistoryRequest, *, timeout: float | None = None
     ) -> AsyncIterable[history_pb2.TailHistoryReply]: ...

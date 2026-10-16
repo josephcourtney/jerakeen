@@ -16,7 +16,7 @@ Generated protobuf code is private API. Backward compatibility applies to docume
 
 ## Service model
 
-Public decomposition follows the daemon services in the vendored snapshot. For Atuin 18.23 / protocol 3 that means `history` and `search`. Removed daemon services are not kept alive as synthetic protocol facades. Functionality that moved between Atuin services moves to the corresponding Jerakeen client.
+Public decomposition follows the daemon services in the vendored snapshot. For Atuin 18.23 / protocol 3 and Atuin 18.24 / protocol 5 that means `history` and `search`. Removed daemon services are not kept alive as synthetic protocol facades. Functionality that moved between Atuin services moves to the corresponding Jerakeen client.
 
 Wire identifiers are converted to `uuid.UUID` at the public boundary. Optional fields, oneofs, stream direction, line-range conventions, and `NOT_FOUND` semantics must be preserved rather than inferred from older protocol versions.
 

@@ -115,6 +115,11 @@ class FakeHistoryStub:
         self.timeouts["rebuild"] = timeout
         return history_pb2.RebuildHistoryReply(version="18.23.0", protocol=3)
 
+    async def CompactStore(self, request, *, timeout=None):
+        self.requests["compact_store"] = request
+        self.timeouts["compact_store"] = timeout
+        return history_pb2.CompactStoreReply(rewritten=12, version="18.24.0", protocol=5)
+
     async def Shutdown(self, request, *, timeout=None):
         self.requests["shutdown"] = request
         self.timeouts["shutdown"] = timeout
@@ -217,7 +222,7 @@ class HistoryTests(unittest.IsolatedAsyncioTestCase):
         with pytest.raises(ValueError, match="non-negative"):
             await self.client.end(HISTORY_ID, exit_code=0, duration_ns=-1)
 
-    async def test_cancel_delete_rebuild_and_shutdown(self) -> None:
+    async def test_cancel_delete_rebuild_compact_and_shutdown(self) -> None:
         cancelled = await self.client.cancel(HISTORY_ID)
         assert (cancelled.version, cancelled.protocol) == ("18.23.0", 3)
 
@@ -235,6 +240,15 @@ class HistoryTests(unittest.IsolatedAsyncioTestCase):
 
         rebuilt = await self.client.rebuild()
         assert (rebuilt.version, rebuilt.protocol) == ("18.23.0", 3)
+
+        compacted = await self.client.compact_store()
+        assert (compacted.rewritten, compacted.version, compacted.protocol) == (
+            12,
+            "18.24.0",
+            5,
+        )
+        assert isinstance(self.stub.requests["compact_store"], history_pb2.CompactStoreRequest)
+        assert self.stub.timeouts["compact_store"] == 5.0
         assert await self.client.shutdown()
 
     async def test_tail_preserves_all_protocol3_event_kinds(self) -> None:
@@ -242,7 +256,7 @@ class HistoryTests(unittest.IsolatedAsyncioTestCase):
             history_pb2.TailHistoryReply(started=history_entry()),
             history_pb2.TailHistoryReply(ended=history_entry(exit_code=5)),
             history_pb2.TailHistoryReply(cancelled=history_entry()),
-            history_pb2.TailHistoryReply(lagged=history_pb2.Lagged(dropped=12)),
+            history_pb2.TailHistoryReply(lagged=common_pb2.Lagged(dropped=12)),
         ]
         events = [event async for event in self.client.tail()]
         assert isinstance(events[0], HistoryStarted)

@@ -20,6 +20,7 @@ from jerakeen.models import (
     HistoryCancel,
     HistoryCancelled,
     HistoryCommand,
+    HistoryCompactStore,
     HistoryDelete,
     HistoryEnd,
     HistoryEnded,
@@ -146,7 +147,7 @@ def _event_from_proto(reply: history_pb2.TailHistoryReply) -> HistoryEventRecord
 
 
 class HistoryClient:
-    """Pythonic wrapper around Atuin's protocol-3 History gRPC service."""
+    """Pythonic wrapper around Atuin's protocol-3/5 History gRPC service."""
 
     def __init__(self, stub: HistoryStub, *, timeout: float | None = 5.0) -> None:
         self._stub = stub
@@ -244,6 +245,17 @@ class HistoryClient:
             self._stub.RebuildHistory(history_pb2.RebuildHistoryRequest(), timeout=self._timeout)
         )
         return HistoryRebuild(version=reply.version, protocol=reply.protocol)
+
+    async def compact_store(self) -> HistoryCompactStore:
+        """Compact the daemon's persistent record store (mutating operation)."""
+        reply = await call(
+            self._stub.CompactStore(history_pb2.CompactStoreRequest(), timeout=self._timeout)
+        )
+        return HistoryCompactStore(
+            rewritten=reply.rewritten,
+            version=reply.version,
+            protocol=reply.protocol,
+        )
 
     async def shutdown(self) -> bool:
         reply = await call(self._stub.Shutdown(history_pb2.ShutdownRequest(), timeout=self._timeout))

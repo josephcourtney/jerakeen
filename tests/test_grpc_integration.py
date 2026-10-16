@@ -9,7 +9,7 @@ from uuid import UUID
 import grpc
 import pytest
 
-from jerakeen import Atuin, AtuinCompatibilityError, HistoryEnded, HistoryStarted, connect
+from jerakeen import Atuin, AtuinCompatibilityError, HistoryEnded, HistoryLagged, HistoryStarted, connect
 from jerakeen._ids import history_id_to_proto
 from jerakeen._proto import common_pb2, history_pb2, search_pb2
 
@@ -24,7 +24,8 @@ class FakeDaemon:
         self.output_requests: list[history_pb2.GetCommandOutputRequest] = []
 
     async def status(self, request, context):
-        return history_pb2.StatusReply(healthy=True, version="18.23.0", pid=123, protocol=self.protocol)
+        version = "18.23.0" if self.protocol == 3 else "18.24.0"
+        return history_pb2.StatusReply(healthy=True, version=version, pid=123, protocol=self.protocol)
 
     async def start_history(self, request, context):
         return history_pb2.StartHistoryReply(
@@ -53,6 +54,11 @@ class FakeDaemon:
         entry.exit = 0
         entry.duration = 12_000_000
         yield history_pb2.TailHistoryReply(ended=entry)
+        if self.protocol == 5:
+            yield history_pb2.TailHistoryReply(lagged=common_pb2.Lagged(dropped=4))
+
+    async def compact_store(self, request, context):
+        return history_pb2.CompactStoreReply(rewritten=12, version="18.24.0", protocol=5)
 
     async def get_command_output(self, request, context):
         self.output_requests.append(request)
@@ -132,6 +138,11 @@ def add_services(server: grpc.aio.Server, daemon: FakeDaemon) -> None:
                     history_pb2.EndHistoryRequest,
                     history_pb2.EndHistoryReply,
                 ),
+                "CompactStore": _unary_unary(
+                    daemon.compact_store,
+                    history_pb2.CompactStoreRequest,
+                    history_pb2.CompactStoreReply,
+                ),
                 "TailHistory": _unary_stream(
                     daemon.tail_history,
                     history_pb2.TailHistoryRequest,
@@ -179,8 +190,8 @@ class GrpcIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.tempdir.cleanup()
 
     async def _exercise(self, atuin: Atuin) -> None:
-        assert atuin.version == "18.23.0"
-        assert atuin.protocol == 3
+        assert atuin.version == ("18.23.0" if self.daemon.protocol == 3 else "18.24.0")
+        assert atuin.protocol == self.daemon.protocol
         assert atuin.compatibility.compatible
 
         started = await atuin.history.start(
@@ -194,6 +205,9 @@ class GrpcIntegrationTests(unittest.IsolatedAsyncioTestCase):
         events = [event async for event in atuin.history.tail()]
         assert isinstance(events[0], HistoryStarted)
         assert isinstance(events[1], HistoryEnded)
+        if self.daemon.protocol == 5:
+            assert isinstance(events[2], HistoryLagged)
+            assert events[2].dropped == 4
 
         output = await atuin.history.output(HISTORY_ID)
         assert output is not None
@@ -215,6 +229,23 @@ class GrpcIntegrationTests(unittest.IsolatedAsyncioTestCase):
     async def test_protocol3_over_unix_socket(self) -> None:
         async with await Atuin.connect(socket=self.socket) as atuin:
             await self._exercise(atuin)
+
+    async def test_protocol5_over_tcp(self) -> None:
+        self.daemon.protocol = 5
+        async with await Atuin.connect(tcp=f"127.0.0.1:{self.port}") as atuin:
+            await self._exercise(atuin)
+
+    @unittest.skipIf(os.name == "nt", "Unix-domain sockets are not available on Windows")
+    async def test_protocol5_over_unix_socket(self) -> None:
+        self.daemon.protocol = 5
+        async with await Atuin.connect(socket=self.socket) as atuin:
+            await self._exercise(atuin)
+
+    async def test_compact_store_on_fake_protocol5_daemon(self) -> None:
+        self.daemon.protocol = 5
+        async with await Atuin.connect(tcp=f"127.0.0.1:{self.port}") as atuin:
+            result = await atuin.history.compact_store()
+            assert (result.rewritten, result.version, result.protocol) == (12, "18.24.0", 5)
 
     async def test_output_not_found_maps_to_none_over_real_grpc(self) -> None:
         self.daemon.output_missing = True

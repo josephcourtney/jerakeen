@@ -4,13 +4,13 @@ Typed async Python client and CLI for Atuin's local daemon gRPC interface.
 
 Jerakeen vendors the daemon protobuf snapshot it supports under `proto/atuin/` and commits private generated bindings under `src/jerakeen/_proto/`. The public API exposes Python models (`UUID`, `datetime`, dataclasses, iterables, async iterators) rather than protobuf objects.
 
-The current API targets **Atuin 18.23 / daemon protocol 3**. Protocol 1 is intentionally not accepted by this release because Atuin's daemon API changed service boundaries and wire types substantially between 18.19 and 18.23.
+The current API vendors **Atuin 18.24 / daemon protocol 5** and also supports **Atuin 18.23 / protocol 3**, with unchanged wire semantics for existing RPCs. Protocols 1, 2, and 4 are not accepted.
 
 ## Services
 
-Protocol 3 exposes two daemon services through Jerakeen:
+Protocols 3 and 5 expose two daemon services through Jerakeen:
 
-- `atuin.history` — status, command lifecycle, deletion/rebuild, live tailing, command-output registration and retrieval, daemon shutdown
+- `atuin.history` — status, command lifecycle, deletion/rebuild, live tailing, command-output registration and retrieval, daemon shutdown; protocol 5 additionally supports record-store compaction
 - `atuin.search` — history search, interactive search sessions, index preparation, and full-text search across captured output
 
 Atuin 18.23 removed the old `Semantic` and `Control` gRPC services. Their functionality is not emulated as fake services: command output now belongs to `History`; maintenance operations that remain public are exposed by `History`.
@@ -84,6 +84,8 @@ Maintenance RPCs are available directly:
 ```python
 await atuin.history.delete(history_ids)
 await atuin.history.rebuild()
+# Protocol 5 only; mutates the persistent daemon store:
+# result = await atuin.history.compact_store()
 await atuin.history.shutdown()
 ```
 
@@ -146,7 +148,7 @@ The CLI streams `History.TailHistory`. `--output` fetches captured output for en
 just check
 ```
 
-A non-mutating live contract test can be run against an installed Atuin 18.23 daemon:
+A non-mutating live contract test can be run against an installed Atuin 18.24 / protocol-5 daemon:
 
 ```console
 CATUIN_LIVE_TEST=1 uv run pytest tests/test_live_atuin.py

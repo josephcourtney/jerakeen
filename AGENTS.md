@@ -6,7 +6,7 @@ jerakeen is a small, typed Python client for Atuin's local daemon gRPC interface
 
 - Treat `proto/atuin/` as the wire-protocol source of truth for the supported Atuin snapshot.
 - Generated modules under `src/jerakeen/_proto/` are private implementation detail. Public APIs use Python domain models and standard Python types.
-- Keep the public decomposition aligned with the daemon services in the vendored snapshot. Atuin 18.23 protocol 3 exposes `history` and `search`; do not recreate removed `semantic` or `control` services.
+- Keep the public decomposition aligned with the daemon services in the vendored snapshot. Atuin 18.24 protocol 5 and compatible Atuin 18.23 protocol 3 expose `history` and `search`; do not recreate removed `semantic` or `control` services.
 - Do not depend on Atuin's SQLite schema, MCP server, CLI output formats, or private Rust implementation when the daemon RPC exposes the capability.
 - Preserve protobuf optional-field presence, oneofs, streaming shape, query correlation, UUID encoding, range semantics, and daemon protocol versioning.
 - Finite RPCs use configurable deadlines. Long-lived streams do not inherit a short unary-RPC deadline implicitly.

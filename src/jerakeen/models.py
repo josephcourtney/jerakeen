@@ -96,6 +96,13 @@ class HistoryRebuild:
     protocol: int
 
 
+@dataclass(frozen=True, slots=True)
+class HistoryCompactStore:
+    rewritten: int
+    version: str
+    protocol: int
+
+
 @dataclass(slots=True)
 class HistoryCommand:
     """A command lifecycle whose completion fields can be set inside the context."""

@@ -31,6 +31,11 @@ class HistoryStub:
             request_serializer=history__pb2.RebuildHistoryRequest.SerializeToString,
             response_deserializer=history__pb2.RebuildHistoryReply.FromString,
         )
+        self.CompactStore = channel.unary_unary(
+            '/history.History/CompactStore',
+            request_serializer=history__pb2.CompactStoreRequest.SerializeToString,
+            response_deserializer=history__pb2.CompactStoreReply.FromString,
+        )
         self.TailHistory = channel.unary_stream(
             '/history.History/TailHistory',
             request_serializer=history__pb2.TailHistoryRequest.SerializeToString,

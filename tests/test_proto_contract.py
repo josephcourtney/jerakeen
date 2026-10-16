@@ -45,17 +45,19 @@ def test_common_uuid_and_range_contract() -> None:
         "PyStyleIdxRange",
         "UnsignedIdxRange",
         "HighlightedText",
+        "Lagged",
     }
     assert [(field.name, field.number) for field in messages["Uuid"].fields] == [("value", 1)]
     assert [(field.name, field.number) for field in messages["HistoryId"].fields] == [("uuid", 1)]
     assert [(field.name, field.number) for field in messages["RecordId"].fields] == [("uuid", 1)]
+    assert [(field.name, field.number) for field in messages["Lagged"].fields] == [("dropped", 1)]
     assert [(field.name, field.number) for field in messages["PyStyleIdxRange"].fields] == [
         ("start", 1),
         ("end", 2),
     ]
 
 
-def test_history_service_and_protocol3_shapes() -> None:
+def test_history_service_and_protocol5_shapes() -> None:
     service = history_pb2.DESCRIPTOR.services_by_name["History"]
     assert rpc_shapes(service) == {
         "StartHistory": (False, False),
@@ -63,6 +65,7 @@ def test_history_service_and_protocol3_shapes() -> None:
         "CancelHistory": (False, False),
         "DeleteHistory": (True, False),
         "RebuildHistory": (False, False),
+        "CompactStore": (False, False),
         "TailHistory": (False, True),
         "Status": (False, False),
         "Shutdown": (False, False),
@@ -82,6 +85,14 @@ def test_history_service_and_protocol3_shapes() -> None:
     end_reply = messages["EndHistoryReply"].fields_by_name
     assert end_reply["record_id"].message_type.full_name == "common.RecordId"
     assert end_reply["record_idx"].number == 2
+
+    compact = messages["CompactStoreReply"].fields_by_name
+    assert compact["rewritten"].number == 1
+    assert compact["version"].number == 2
+    assert compact["protocol"].number == 3
+
+    tail_lagged = messages["TailHistoryReply"].fields_by_name["lagged"]
+    assert tail_lagged.message_type.full_name == "common.Lagged"
 
     tail = messages["TailHistoryReply"].oneofs_by_name["event"]
     assert {field.name for field in tail.fields} == {"started", "ended", "cancelled", "lagged"}

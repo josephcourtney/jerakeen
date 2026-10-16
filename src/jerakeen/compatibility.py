@@ -8,8 +8,8 @@ from jerakeen.exceptions import AtuinCompatibilityError
 if TYPE_CHECKING:
     from jerakeen.models import DaemonStatus
 
-VENDORED_ATUIN_VERSION = "18.23.0"
-SUPPORTED_PROTOCOLS = (3,)
+VENDORED_ATUIN_VERSION = "18.24.0"
+SUPPORTED_PROTOCOLS = (3, 5)
 
 
 @dataclass(frozen=True, slots=True)

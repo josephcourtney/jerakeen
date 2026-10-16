@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Added
+
+- Vendor Atuin 18.24.0 / daemon protocol 5 while retaining protocol 3 compatibility for unchanged RPCs, including output retrieval and lagged history events.
+- Expose protocol-5 `History.CompactStore` as an explicit, typed maintenance operation; live qualification never invokes it.
+- Add protocol-5 TCP/Unix gRPC integration coverage and update the non-mutating live-daemon contract.
+
+
 ## 0.10.0 - 2026-09-23
 
 ### Breaking changes
