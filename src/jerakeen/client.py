@@ -4,11 +4,13 @@ import asyncio
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Self
 
-from jerakeen._proto import history_pb2_grpc, search_pb2_grpc
-from jerakeen._transport import create_channel, discover_target
+from jerakeen._proto import history_pb2, history_pb2_grpc, search_pb2_grpc
+from jerakeen._transport import BUILD_HEADER, BuildMetadata, create_channel, discover_target
 from jerakeen.compatibility import Compatibility, assess_compatibility
-from jerakeen.exceptions import AtuinConnectionError
+from jerakeen.exceptions import AtuinConnectionError, AtuinProtocolError, from_grpc_error
 from jerakeen.history import HistoryClient
+from jerakeen.models import DaemonStatus
+import grpc
 from jerakeen.search import SearchClient
 
 if TYPE_CHECKING:
@@ -70,7 +72,8 @@ class Atuin:
         check_compatibility: bool = True,
     ) -> Atuin:
         target, description = discover_target(socket, tcp)
-        channel = create_channel(target)
+        build = BuildMetadata()
+        channel = create_channel(target, build=build)
         try:
             await asyncio.wait_for(channel.channel_ready(), timeout=timeout)
         except TimeoutError as exc:
@@ -80,10 +83,31 @@ class Atuin:
 
         client = cls(channel, description=description, rpc_timeout=rpc_timeout)
         try:
-            status = await client.history.status()
+            # Status is ungated; inspect the daemon build before ordinary RPCs.
+            request = history_pb2.StatusRequest()
+            status_call = history_pb2_grpc.HistoryStub(channel).Status(
+                request, timeout=rpc_timeout
+            )
+            try:
+                reply = await status_call
+            except grpc.aio.AioRpcError as exc:
+                raise from_grpc_error(exc) from exc
+            metadata = await status_call.initial_metadata()
+            advertised = next((v for k, v in metadata if k == BUILD_HEADER), None)
+            status = DaemonStatus(
+                healthy=reply.healthy, version=reply.version,
+                pid=reply.pid, protocol=reply.protocol,
+            )
             compatibility = assess_compatibility(status)
             if check_compatibility:
                 compatibility.require()
+            if advertised is not None:
+                # Never echo arbitrary daemon builds. Only audited builds may pass.
+                if advertised != '18.24.1':
+                    raise AtuinProtocolError(
+                        f'Unvalidated Atuin build {advertised!r}; refusing gated RPCs'
+                    )
+                build.value = advertised
         except BaseException:
             await client.close()
             raise
