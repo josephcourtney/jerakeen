@@ -104,7 +104,7 @@ class Atuin:
                 compatibility.require()
             if advertised is not None:
                 # Never echo arbitrary daemon builds. Only audited builds may pass.
-                if advertised != '18.24.1':
+                if advertised not in ():
                     raise AtuinProtocolError(
                         f'Unvalidated Atuin build {advertised!r}; refusing gated RPCs'
                     )
