@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+
+import grpc
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Self
 
@@ -10,7 +12,6 @@ from jerakeen.compatibility import Compatibility, assess_compatibility
 from jerakeen.exceptions import AtuinConnectionError, AtuinProtocolError, from_grpc_error
 from jerakeen.history import HistoryClient
 from jerakeen.models import DaemonStatus
-import grpc
 from jerakeen.search import SearchClient
 
 if TYPE_CHECKING:
