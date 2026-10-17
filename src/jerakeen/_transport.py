@@ -7,6 +7,52 @@ import grpc
 
 ATUIN_AUTHORITY = "atuin_local_daemon:0"
 
+BUILD_HEADER = "x-atuin-build"
+
+
+class BuildMetadata:
+    """Connection-scoped build identity, populated after the ungated Status RPC."""
+
+    def __init__(self) -> None:
+        self.value: str | None = None
+
+    def details(self, details: grpc.aio.ClientCallDetails) -> grpc.aio.ClientCallDetails:
+        if self.value is None:
+            return details
+        metadata = tuple((k, v) for k, v in (details.metadata or ()) if k != BUILD_HEADER)
+        return grpc.aio.ClientCallDetails(
+            details.method,
+            details.timeout,
+            (*metadata, (BUILD_HEADER, self.value)),
+            details.credentials,
+            details.wait_for_ready,
+        )
+
+
+class BuildInterceptor(
+    grpc.aio.UnaryUnaryClientInterceptor,
+    grpc.aio.UnaryStreamClientInterceptor,
+    grpc.aio.StreamUnaryClientInterceptor,
+    grpc.aio.StreamStreamClientInterceptor,
+):
+    """Stamp all four gRPC method shapes with the validated build."""
+
+    def __init__(self, state: BuildMetadata) -> None:
+        self.state = state
+
+    async def intercept_unary_unary(self, continuation, details, request):
+        return await continuation(self.state.details(details), request)
+
+    async def intercept_unary_stream(self, continuation, details, request):
+        return await continuation(self.state.details(details), request)
+
+    async def intercept_stream_unary(self, continuation, details, iterator):
+        return await continuation(self.state.details(details), iterator)
+
+    async def intercept_stream_stream(self, continuation, details, iterator):
+        return await continuation(self.state.details(details), iterator)
+
+
 
 def unix_socket_candidates() -> list[Path]:
     candidates: list[Path] = []
@@ -55,11 +101,12 @@ def discover_target(
     raise FileNotFoundError(msg)
 
 
-def create_channel(target: str) -> grpc.aio.Channel:
+def create_channel(target: str, *, build: BuildMetadata | None = None) -> grpc.aio.Channel:
     # Atuin's tonic client uses http://atuin_local_daemon:0 as the logical
     # endpoint while transporting over the Unix socket. grpcio must send the
     # same HTTP/2 :authority or tonic/hyper can reset streaming RPCs.
     return grpc.aio.insecure_channel(
         target,
         options=(("grpc.default_authority", ATUIN_AUTHORITY),),
+        **({"interceptors": [BuildInterceptor(build)]} if build is not None else {}),
     )
