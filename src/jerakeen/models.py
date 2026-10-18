@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 @dataclass(frozen=True, slots=True)
 class DaemonStatus:
     healthy: bool
-    version: str | None
+    version: str
     pid: int
     protocol: int | None
 
@@ -116,11 +116,11 @@ class HistoryCommand:
         return self.start.id
 
     @property
-    def version(self) -> str:
+    def version(self) -> str | None:
         return self.start.version
 
     @property
-    def protocol(self) -> int:
+    def protocol(self) -> int | None:
         return self.start.protocol
 
 

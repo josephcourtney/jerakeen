@@ -9,25 +9,26 @@ from jerakeen.exceptions import AtuinCompatibilityError
 from jerakeen.models import DaemonStatus
 
 
-def status(protocol: int) -> DaemonStatus:
-    version = {3: "18.23.0", 5: "18.24.0"}.get(protocol, "unknown")
+def status(version: str, protocol: int | None = None) -> DaemonStatus:
     return DaemonStatus(healthy=True, version=version, pid=1, protocol=protocol)
 
 
-def test_vendored_protocol_metadata_matches_snapshot() -> None:
+def test_vendored_build_metadata_matches_snapshot() -> None:
     vendored_file = Path(__file__).parents[1] / "proto" / "atuin" / "VERSION"
     assert vendored_file.read_text(encoding="utf-8").strip() == VENDORED_ATUIN_VERSION
-    assert VENDORED_ATUIN_VERSION == "18.24.0"
-    assert SUPPORTED_PROTOCOLS == (3, 5)
-    for protocol in SUPPORTED_PROTOCOLS:
-        compatibility = assess_compatibility(status(protocol))
-        assert compatibility.compatible
+    assert VENDORED_ATUIN_VERSION == "18.24.1"
+    assert SUPPORTED_PROTOCOLS == ()
+    compatibility = assess_compatibility(status("18.24.1"))
+    assert compatibility.compatible
+    compatibility.require()
+
+
+@pytest.mark.parametrize(
+    ("version", "protocol"),
+    [("18.23.0", 3), ("18.24.0", 5), ("18.24.0", None), ("18.24.2", None), ("18.24.1", 5)],
+)
+def test_old_or_mismatched_daemons_are_rejected(version: str, protocol: int | None) -> None:
+    compatibility = assess_compatibility(status(version, protocol))
+    assert not compatibility.compatible
+    with pytest.raises(AtuinCompatibilityError, match="incompatible"):
         compatibility.require()
-
-
-def test_old_and_unknown_protocols_are_rejected() -> None:
-    for protocol in (1, 2, 4, 999):
-        compatibility = assess_compatibility(status(protocol))
-        assert not compatibility.compatible
-        with pytest.raises(AtuinCompatibilityError, match=f"protocol {protocol}"):
-            compatibility.require()

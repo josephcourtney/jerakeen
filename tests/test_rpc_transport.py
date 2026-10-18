@@ -12,6 +12,9 @@ import pytest
 from jerakeen._rpc import call
 from jerakeen._transport import (
     ATUIN_AUTHORITY,
+    BUILD_HEADER,
+    _BuildInterceptor,
+    _versioned_details,
     create_channel,
     discover_target,
     unix_socket_candidates,
@@ -152,10 +155,48 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
         with patch("jerakeen._transport.grpc.aio.insecure_channel", return_value=sentinel) as create:
             result = create_channel("unix:///tmp/atuin.sock")
         assert result is sentinel
-        create.assert_called_once_with(
-            "unix:///tmp/atuin.sock",
-            options=(("grpc.default_authority", ATUIN_AUTHORITY),),
+        create.assert_called_once()
+        args, kwargs = create.call_args
+        assert args == ("unix:///tmp/atuin.sock",)
+        assert kwargs["options"] == (("grpc.default_authority", ATUIN_AUTHORITY),)
+        (interceptor,) = kwargs["interceptors"]
+        assert isinstance(interceptor, _BuildInterceptor)
+
+    def test_all_rpc_shapes_use_exact_client_build_header(self) -> None:
+        details = grpc.aio.ClientCallDetails(
+            "/history.History/GetCommandOutput",
+            5.0,
+            (("some-header", "keep"), (BUILD_HEADER, "attacker-build")),
+            None,
+            None,
         )
+        updated = _versioned_details(details)
+        assert updated.method == details.method
+        assert updated.timeout == details.timeout
+        assert tuple(updated.metadata) == (
+            ("some-header", "keep"),
+            (BUILD_HEADER, "18.24.1"),
+        )
+
+    async def test_interceptor_stamps_unary_and_stream_calls(self) -> None:
+        details = grpc.aio.ClientCallDetails("/history.History/Status", 3, None, None, None)
+        observed = []
+
+        async def continuation(next_details, request):
+            observed.append((tuple(next_details.metadata), request))
+            return "ok"
+
+        interceptor = _BuildInterceptor()
+        for name in (
+            "intercept_unary_unary",
+            "intercept_unary_stream",
+            "intercept_stream_unary",
+            "intercept_stream_stream",
+        ):
+            result = await getattr(interceptor, name)(continuation, details, "request")
+            assert result == "ok"
+        assert len(observed) == 4
+        assert all((BUILD_HEADER, "18.24.1") in meta for meta, _ in observed)
 
     async def test_atuin_connect_timeout_closes_channel(self) -> None:
         channel = Mock()
