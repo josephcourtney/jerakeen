@@ -34,20 +34,14 @@ class CancelHistoryRequest(_message.Message):
 
 class StartHistoryReply(_message.Message):
     id: common_pb2.HistoryId
-    version: str
-    protocol: int
     def __init__(self, **kwargs: object) -> None: ...
 
 class EndHistoryReply(_message.Message):
     record_id: common_pb2.RecordId
     record_idx: int
-    version: str
-    protocol: int
     def __init__(self, **kwargs: object) -> None: ...
 
 class CancelHistoryReply(_message.Message):
-    version: str
-    protocol: int
     def __init__(self, **kwargs: object) -> None: ...
 
 class DeleteHistoryRequest(_message.Message):
@@ -56,16 +50,12 @@ class DeleteHistoryRequest(_message.Message):
 
 class DeleteHistoryReply(_message.Message):
     deleted: int
-    version: str
-    protocol: int
     def __init__(self, **kwargs: object) -> None: ...
 
 class RebuildHistoryRequest(_message.Message):
     def __init__(self, **kwargs: object) -> None: ...
 
 class RebuildHistoryReply(_message.Message):
-    version: str
-    protocol: int
     def __init__(self, **kwargs: object) -> None: ...
 
 class CompactStoreRequest(_message.Message):
@@ -73,8 +63,6 @@ class CompactStoreRequest(_message.Message):
 
 class CompactStoreReply(_message.Message):
     rewritten: int
-    version: str
-    protocol: int
     def __init__(self, **kwargs: object) -> None: ...
 
 class StatusRequest(_message.Message):
@@ -84,7 +72,6 @@ class StatusReply(_message.Message):
     healthy: bool
     version: str
     pid: int
-    protocol: int
     def __init__(self, **kwargs: object) -> None: ...
 
 class ShutdownRequest(_message.Message):
