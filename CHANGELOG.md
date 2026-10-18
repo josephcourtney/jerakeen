@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Breaking changes
+
+- Target Atuin 18.24.1's exact build-gated daemon interface. All four gRPC request shapes announce `x-atuin-build: 18.24.1`; customized or older binaries are rejected rather than bypassing the daemon's build guard.
+- Adopt the Atuin 18.24.1 history proto snapshot, which removes the numeric daemon protocol and per-reply version/protocol fields. Public compatibility protocol metadata is now `None` where upstream removed it.
+
+### Added
+
+- Add exact-build identity interception, readable `AtuinCompatibilityError` for daemon build refusals, in-process TCP/Unix gRPC coverage, and strict protocol-shape tests.
+
+
 ### Added
 
 - Vendor Atuin 18.24.0 / daemon protocol 5 while retaining protocol 3 compatibility for unchanged RPCs, including output retrieval and lagged history events.
