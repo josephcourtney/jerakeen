@@ -112,6 +112,10 @@ class Atuin:
         except BaseException:
             await client.close()
             raise
+        client.search = SearchClient(
+            search_pb2_grpc.SearchStub(channel), timeout=rpc_timeout,
+            build=local_build if local_build == VALIDATED_BUILD else None,
+        )
         client.history._version = status.version
         client.history._protocol = status.protocol
         client._status = status
