@@ -278,9 +278,10 @@ class SearchSession:
 class SearchClient:
     """Pythonic wrapper around Atuin's Search gRPC service."""
 
-    def __init__(self, stub: SearchStub, *, timeout: float | None = 5.0) -> None:
+    def __init__(self, stub: SearchStub, *, timeout: float | None = 5.0, build: str | None = None) -> None:
         self._stub = stub
         self._timeout = timeout
+        self._metadata = (("x-atuin-build", build),) if build else None
 
     async def prepare_index(self, shells: Iterable[str] = ()) -> None:
         await call(
