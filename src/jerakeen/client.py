@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-
-import grpc
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Self, cast
+
+import grpc
 
 from jerakeen._proto import history_pb2, history_pb2_grpc, search_pb2_grpc
 from jerakeen._transport import BUILD_HEADER, VALIDATED_BUILD, BuildMetadata, create_channel, discover_target, local_atuin_build
@@ -18,9 +18,6 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator
     from pathlib import Path
 
-    import grpc
-
-    from jerakeen.models import DaemonStatus
 
 
 class Atuin:
@@ -85,7 +82,7 @@ class Atuin:
 
         client = cls(channel, description=description, rpc_timeout=rpc_timeout)
         try:
-            # Status is ungated; inspect the daemon build before ordinary RPCs.
+            # Status is gated too: the validated local build was stamped before this call.
             request = history_pb2.StatusRequest()
             status_call = cast(
                 'grpc.aio.UnaryUnaryCall',
@@ -114,6 +111,8 @@ class Atuin:
             await client.close()
             raise
 
+        client.history._version = status.version
+        client.history._protocol = status.protocol
         client._status = status
         client._compatibility = compatibility
         return client
