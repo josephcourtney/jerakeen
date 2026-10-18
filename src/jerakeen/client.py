@@ -19,7 +19,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-
 async def _handshake(
     channel: grpc.aio.Channel, timeout: float | None, local_build: str | None
 ) -> DaemonStatus:
@@ -27,7 +26,7 @@ async def _handshake(
     # carries the validated local executable build.
     request = history_pb2.StatusRequest()
     call = cast(
-        'grpc.aio.UnaryUnaryCall',
+        "grpc.aio.UnaryUnaryCall",
         history_pb2_grpc.HistoryStub(channel).Status(request, timeout=timeout),
     )
     try:
@@ -42,6 +41,7 @@ async def _handshake(
     # The legacy protobuf decoder yields zero for the removed StatusReply.protocol.
     protocol = 5 if advertised == VALIDATED_BUILD else reply.protocol
     return DaemonStatus(reply.healthy, reply.version, reply.pid, protocol)
+
 
 class Atuin:
     """High-level async client for a local Atuin daemon."""
