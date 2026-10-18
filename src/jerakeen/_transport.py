@@ -5,7 +5,45 @@ from pathlib import Path
 
 import grpc
 
+from jerakeen.compatibility import VENDORED_ATUIN_VERSION
+
 ATUIN_AUTHORITY = "atuin_local_daemon:0"
+BUILD_HEADER = "x-atuin-build"
+
+
+def _versioned_details(details: grpc.aio.ClientCallDetails) -> grpc.aio.ClientCallDetails:
+    """Announce the vendored client build, never echo a daemon-supplied build."""
+    existing = tuple(
+        (key, value) for key, value in (details.metadata or ()) if key.lower() != BUILD_HEADER
+    )
+    return grpc.aio.ClientCallDetails(
+        details.method,
+        details.timeout,
+        (*existing, (BUILD_HEADER, VENDORED_ATUIN_VERSION)),
+        details.credentials,
+        details.wait_for_ready,
+    )
+
+
+class _BuildInterceptor(
+    grpc.aio.UnaryUnaryClientInterceptor,
+    grpc.aio.UnaryStreamClientInterceptor,
+    grpc.aio.StreamUnaryClientInterceptor,
+    grpc.aio.StreamStreamClientInterceptor,
+):
+    """Stamp all gRPC call shapes with the exact build identity."""
+
+    async def intercept_unary_unary(self, continuation, details, request):
+        return await continuation(_versioned_details(details), request)
+
+    async def intercept_unary_stream(self, continuation, details, request):
+        return await continuation(_versioned_details(details), request)
+
+    async def intercept_stream_unary(self, continuation, details, request_iterator):
+        return await continuation(_versioned_details(details), request_iterator)
+
+    async def intercept_stream_stream(self, continuation, details, request_iterator):
+        return await continuation(_versioned_details(details), request_iterator)
 
 
 def unix_socket_candidates() -> list[Path]:
@@ -27,10 +65,7 @@ def unix_socket_candidates() -> list[Path]:
     return list(dict.fromkeys(candidates))
 
 
-def discover_target(
-    socket: str | Path | None,
-    tcp: str | None,
-) -> tuple[str, str]:
+def discover_target(socket: str | Path | None, tcp: str | None) -> tuple[str, str]:
     if tcp:
         return tcp, tcp
 
@@ -56,10 +91,11 @@ def discover_target(
 
 
 def create_channel(target: str) -> grpc.aio.Channel:
-    # Atuin's tonic client uses http://atuin_local_daemon:0 as the logical
-    # endpoint while transporting over the Unix socket. grpcio must send the
-    # same HTTP/2 :authority or tonic/hyper can reset streaming RPCs.
+    # Atuin's tonic UDS client uses this HTTP/2 :authority for streaming.
+    # The version interceptor deliberately never reflects the daemon build:
+    # differing builds must not bypass Atuin's compatibility check.
     return grpc.aio.insecure_channel(
         target,
         options=(("grpc.default_authority", ATUIN_AUTHORITY),),
+        interceptors=(_BuildInterceptor(),),
     )
