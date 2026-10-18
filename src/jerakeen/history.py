@@ -159,7 +159,7 @@ class HistoryClient:
             healthy=reply.healthy,
             version=reply.version,
             pid=reply.pid,
-            protocol=reply.protocol,
+            protocol=None,
         )
 
     async def start(
@@ -193,8 +193,8 @@ class HistoryClient:
         )
         return HistoryStart(
             id=history_id_from_proto(reply.id, source="StartHistoryReply.id"),
-            version=reply.version,
-            protocol=reply.protocol,
+            version=None,
+            protocol=None,
         )
 
     async def end(
@@ -213,8 +213,8 @@ class HistoryClient:
         return HistoryEnd(
             record_id=record_id_from_proto(reply.record_id, source="EndHistoryReply.record_id"),
             record_idx=reply.record_idx,
-            version=reply.version,
-            protocol=reply.protocol,
+            version=None,
+            protocol=None,
         )
 
     async def cancel(self, history_id: UUID | str) -> HistoryCancel:
@@ -224,7 +224,7 @@ class HistoryClient:
                 timeout=self._timeout,
             )
         )
-        return HistoryCancel(version=reply.version, protocol=reply.protocol)
+        return HistoryCancel(version=None, protocol=None)
 
     async def delete(self, history_ids: Iterable[UUID | str]) -> HistoryDelete:
         async def requests() -> AsyncIterator[history_pb2.DeleteHistoryRequest]:
@@ -238,13 +238,13 @@ class HistoryClient:
                 yield history_pb2.DeleteHistoryRequest(ids=chunk)
 
         reply = await call(self._stub.DeleteHistory(requests(), timeout=self._timeout))
-        return HistoryDelete(deleted=reply.deleted, version=reply.version, protocol=reply.protocol)
+        return HistoryDelete(deleted=reply.deleted, version=None, protocol=None)
 
     async def rebuild(self) -> HistoryRebuild:
         reply = await call(
             self._stub.RebuildHistory(history_pb2.RebuildHistoryRequest(), timeout=self._timeout)
         )
-        return HistoryRebuild(version=reply.version, protocol=reply.protocol)
+        return HistoryRebuild(version=None, protocol=None)
 
     async def compact_store(self) -> HistoryCompactStore:
         """Compact the daemon's persistent record store (mutating operation)."""
@@ -253,8 +253,8 @@ class HistoryClient:
         )
         return HistoryCompactStore(
             rewritten=reply.rewritten,
-            version=reply.version,
-            protocol=reply.protocol,
+            version=None,
+            protocol=None,
         )
 
     async def shutdown(self) -> bool:

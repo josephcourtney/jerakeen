@@ -46,7 +46,7 @@ class Atuin:
         return self._status.version
 
     @property
-    def protocol(self) -> int:
+    def protocol(self) -> int | None:
         if self._status is None:
             msg = "Atuin client has not completed its compatibility handshake"
             raise RuntimeError(msg)

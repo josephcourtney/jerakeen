@@ -12,9 +12,9 @@ if TYPE_CHECKING:
 @dataclass(frozen=True, slots=True)
 class DaemonStatus:
     healthy: bool
-    version: str
+    version: str | None
     pid: int
-    protocol: int
+    protocol: int | None
 
 
 class AuthorKind(StrEnum):
@@ -65,42 +65,42 @@ type HistoryEventRecord = HistoryStarted | HistoryEnded | HistoryCancelled | His
 @dataclass(frozen=True, slots=True)
 class HistoryStart:
     id: UUID
-    version: str
-    protocol: int
+    version: str | None
+    protocol: int | None
 
 
 @dataclass(frozen=True, slots=True)
 class HistoryEnd:
     record_id: UUID
     record_idx: int
-    version: str
-    protocol: int
+    version: str | None
+    protocol: int | None
 
 
 @dataclass(frozen=True, slots=True)
 class HistoryCancel:
-    version: str
-    protocol: int
+    version: str | None
+    protocol: int | None
 
 
 @dataclass(frozen=True, slots=True)
 class HistoryDelete:
     deleted: int
-    version: str
-    protocol: int
+    version: str | None
+    protocol: int | None
 
 
 @dataclass(frozen=True, slots=True)
 class HistoryRebuild:
-    version: str
-    protocol: int
+    version: str | None
+    protocol: int | None
 
 
 @dataclass(frozen=True, slots=True)
 class HistoryCompactStore:
     rewritten: int
-    version: str
-    protocol: int
+    version: str | None
+    protocol: int | None
 
 
 @dataclass(slots=True)

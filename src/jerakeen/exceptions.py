@@ -28,15 +28,8 @@ class AtuinProtocolError(AtuinError):
 
 
 class AtuinCompatibilityError(AtuinProtocolError):
-    """The daemon protocol is outside the range supported by this jerakeen build."""
+    """The daemon build or wire contract differs from the supported snapshot."""
 
-    def __init__(self, protocol: int, supported: tuple[int, ...]) -> None:
-        self.protocol = protocol
-        self.supported = supported
-        supported_text = ", ".join(str(value) for value in supported)
-        super().__init__(
-            f"Atuin daemon protocol {protocol} is not supported; supported protocols: {supported_text}"
-        )
 
 
 class AtuinRpcError(AtuinError):
