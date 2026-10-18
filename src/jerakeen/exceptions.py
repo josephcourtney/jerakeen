@@ -54,6 +54,10 @@ def from_grpc_error(exc: grpc.aio.AioRpcError) -> AtuinError:
             return AtuinUnsupportedError(details)
         case grpc.StatusCode.UNAVAILABLE:
             return AtuinConnectionError(details)
+        case grpc.StatusCode.FAILED_PRECONDITION if details.startswith("daemon is build "):
+            return AtuinCompatibilityError(
+                f"{details}; Jerakeen targets Atuin 18.24.1's exact build contract"
+            )
         case grpc.StatusCode.INTERNAL:
             return AtuinProtocolError(details)
         case _:

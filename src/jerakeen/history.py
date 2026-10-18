@@ -218,7 +218,7 @@ class HistoryClient:
         )
 
     async def cancel(self, history_id: UUID | str) -> HistoryCancel:
-        reply = await call(
+        await call(
             self._stub.CancelHistory(
                 history_pb2.CancelHistoryRequest(id=history_id_to_proto(history_id)),
                 timeout=self._timeout,
@@ -241,7 +241,7 @@ class HistoryClient:
         return HistoryDelete(deleted=reply.deleted, version=None, protocol=None)
 
     async def rebuild(self) -> HistoryRebuild:
-        reply = await call(
+        await call(
             self._stub.RebuildHistory(history_pb2.RebuildHistoryRequest(), timeout=self._timeout)
         )
         return HistoryRebuild(version=None, protocol=None)

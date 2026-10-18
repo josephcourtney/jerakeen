@@ -33,16 +33,16 @@ class _BuildInterceptor(
 ):
     """Stamp all gRPC call shapes with the exact build identity."""
 
-    async def intercept_unary_unary(self, continuation, details, request):
+    async def intercept_unary_unary(self, continuation, details, request):  # noqa: ANN001, ANN201
         return await continuation(_versioned_details(details), request)
 
-    async def intercept_unary_stream(self, continuation, details, request):
+    async def intercept_unary_stream(self, continuation, details, request):  # noqa: ANN001, ANN201
         return await continuation(_versioned_details(details), request)
 
-    async def intercept_stream_unary(self, continuation, details, request_iterator):
+    async def intercept_stream_unary(self, continuation, details, request_iterator):  # noqa: ANN001, ANN201
         return await continuation(_versioned_details(details), request_iterator)
 
-    async def intercept_stream_stream(self, continuation, details, request_iterator):
+    async def intercept_stream_stream(self, continuation, details, request_iterator):  # noqa: ANN001, ANN201
         return await continuation(_versioned_details(details), request_iterator)
 
 

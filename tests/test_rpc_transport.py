@@ -21,6 +21,7 @@ from jerakeen._transport import (
 )
 from jerakeen.client import Atuin
 from jerakeen.exceptions import (
+    AtuinCompatibilityError,
     AtuinConnectionError,
     AtuinNotFoundError,
     AtuinProtocolError,
@@ -48,12 +49,23 @@ class RpcTests(unittest.IsolatedAsyncioTestCase):
             grpc.StatusCode.UNIMPLEMENTED: AtuinUnsupportedError,
             grpc.StatusCode.UNAVAILABLE: AtuinConnectionError,
             grpc.StatusCode.INTERNAL: AtuinProtocolError,
+            grpc.StatusCode.FAILED_PRECONDITION: AtuinRpcError,
         }
         for code, error_type in expected.items():
             with self.subTest(code=code):
                 error = from_grpc_error(aio_error(code, "boom"))
                 assert isinstance(error, error_type)
                 assert str(error) == "boom"
+
+    def test_build_mismatch_has_actionable_compatibility_error(self) -> None:
+        error = from_grpc_error(
+            aio_error(
+                grpc.StatusCode.FAILED_PRECONDITION,
+                "daemon is build 18.24.1+local, client is build 18.24.1",
+            )
+        )
+        assert isinstance(error, AtuinCompatibilityError)
+        assert "exact build contract" in str(error)
 
     def test_generic_grpc_error_mapping_preserves_status(self) -> None:
         error = from_grpc_error(aio_error(grpc.StatusCode.PERMISSION_DENIED, "nope"))

@@ -80,13 +80,13 @@ class FakeHistoryStub:
     async def Status(self, request, *, timeout=None):
         self.requests["status"] = request
         self.timeouts["status"] = timeout
-        return history_pb2.StatusReply(healthy=True, version="18.24.1", pid=42, )
+        return history_pb2.StatusReply(healthy=True, version="18.24.1", pid=42)
 
     async def StartHistory(self, request, *, timeout=None):
         self.requests["start"] = request
         self.timeouts["start"] = timeout
         return history_pb2.StartHistoryReply(
-            id=history_id_to_proto(HISTORY_ID), 
+            id=history_id_to_proto(HISTORY_ID),
         )
 
     async def EndHistory(self, request, *, timeout=None):
@@ -106,7 +106,7 @@ class FakeHistoryStub:
         self.timeouts["delete"] = timeout
         async for request in requests:
             self.delete_requests.append(request)
-        return history_pb2.DeleteHistoryReply(deleted=3, )
+        return history_pb2.DeleteHistoryReply(deleted=3)
 
     async def RebuildHistory(self, request, *, timeout=None):
         self.requests["rebuild"] = request
