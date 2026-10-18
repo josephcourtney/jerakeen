@@ -4,11 +4,11 @@ Typed async Python client and CLI for Atuin's local daemon gRPC interface.
 
 Jerakeen vendors the daemon protobuf snapshot it supports under `proto/atuin/` and commits private generated bindings under `src/jerakeen/_proto/`. The public API exposes Python models (`UUID`, `datetime`, dataclasses, iterables, async iterators) rather than protobuf objects.
 
-The current API vendors **Atuin 18.24 / daemon protocol 5** and also supports **Atuin 18.23 / protocol 3**, with unchanged wire semantics for existing RPCs. Protocols 1, 2, and 4 are not accepted.
+The current development branch vendors **Atuin 18.24.1**. That release removed numeric daemon protocol identifiers and requires an exact `x-atuin-build` request header. Jerakeen supplies the build string `18.24.1` on every gRPC call; customized source builds such as `18.24.1+<git SHA>` are deliberately rejected rather than silently spoofed. Older Atuin builds require an older Jerakeen revision.
 
 ## Services
 
-Protocols 3 and 5 expose two daemon services through Jerakeen:
+Atuin 18.24.1 exposes two daemon services through Jerakeen:
 
 - `atuin.history` — status, command lifecycle, deletion/rebuild, live tailing, command-output registration and retrieval, daemon shutdown; protocol 5 additionally supports record-store compaction
 - `atuin.search` — history search, interactive search sessions, index preparation, and full-text search across captured output
@@ -26,7 +26,7 @@ async with connect() as atuin:
     print(status.healthy)
 ```
 
-Connection performs a stable `History.Status` handshake and rejects unsupported daemon protocols by default. Pass `check_compatibility=False` only for diagnostics; other RPCs are not promised to work against an incompatible protocol.
+Connection performs `History.Status` with the exact vendored build header and rejects mismatched daemon versions. `check_compatibility=False` disables Jerakeen's additional version check, **not** Atuin's server-side build guard. When Atuin refuses a mismatched build, Jerakeen raises `AtuinCompatibilityError`. The deprecated numeric `protocol` properties now return `None`; historical per-RPC `version`/`protocol` properties also return `None` because those fields were removed from the wire contract.
 
 ## Captured command output
 
@@ -64,7 +64,7 @@ await atuin.history.register_output(
 
 ## History lifecycle
 
-History IDs and record IDs are exposed as `uuid.UUID` values. Protocol-3 structured UUID messages are confined to the private wire layer.
+History IDs and record IDs are exposed as `uuid.UUID` values. Structured UUID messages are confined to the private wire layer.
 
 ```python
 async with atuin.history.command(
@@ -84,7 +84,7 @@ Maintenance RPCs are available directly:
 ```python
 await atuin.history.delete(history_ids)
 await atuin.history.rebuild()
-# Protocol 5 only; mutates the persistent daemon store:
+# Mutates the persistent daemon store:
 # result = await atuin.history.compact_store()
 await atuin.history.shutdown()
 ```
@@ -110,7 +110,7 @@ async with atuin.search.session() as search:
     result = await search.query("git")
 ```
 
-Protocol 3 also supports full-text search over captured command output:
+Atuin 18.24.1 also supports full-text search over captured command output:
 
 ```python
 async for match in atuin.search.output("traceback", limit=20, context=2):
@@ -134,7 +134,7 @@ The CLI streams `History.TailHistory`. `--output` fetches captured output for en
 
 1. Copy the target release's `crates/atuin-daemon/proto/*.proto` files into `proto/atuin/`.
 2. Update `proto/atuin/VERSION`.
-3. Update `VENDORED_ATUIN_VERSION` and `SUPPORTED_PROTOCOLS` in `jerakeen.compatibility`.
+3. Update `VENDORED_ATUIN_VERSION`, exact build identity, and compatibility assessment in `jerakeen.compatibility`.
 4. Run `just proto`.
 5. Run `just proto-check` and inspect the service/message contract changes.
 6. Update the Python service wrappers and contract/integration tests in the same change.
@@ -148,7 +148,7 @@ The CLI streams `History.TailHistory`. `--output` fetches captured output for en
 just check
 ```
 
-A non-mutating live contract test can be run against an installed Atuin 18.24 / protocol-5 daemon:
+A non-mutating live contract test can be run against an installed matching Atuin 18.24.1 daemon:
 
 ```console
 CATUIN_LIVE_TEST=1 uv run pytest tests/test_live_atuin.py

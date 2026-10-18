@@ -19,28 +19,39 @@ RECORD_ID = UUID("ffeeddcc-bbaa-9988-7766-554433221100")
 
 class FakeDaemon:
     def __init__(self) -> None:
-        self.protocol = 3
+        self.version = "18.24.1"
+        self.build = "18.24.1"
+        self.seen_builds: list[str | None] = []
         self.output_missing = False
         self.output_requests: list[history_pb2.GetCommandOutputRequest] = []
 
+    async def require_build(self, context) -> None:
+        supplied = dict(context.invocation_metadata()).get("x-atuin-build")
+        self.seen_builds.append(supplied)
+        if supplied != self.build:
+            await context.abort(
+                grpc.StatusCode.FAILED_PRECONDITION,
+                f"daemon is build {self.build}, client is build {supplied}",
+            )
+
     async def status(self, request, context):
-        version = "18.23.0" if self.protocol == 3 else "18.24.0"
-        return history_pb2.StatusReply(healthy=True, version=version, pid=123, protocol=self.protocol)
+        await self.require_build(context)
+        return history_pb2.StatusReply(healthy=True, version=self.version, pid=123)
 
     async def start_history(self, request, context):
-        return history_pb2.StartHistoryReply(
-            id=history_id_to_proto(HISTORY_ID), version="18.23.0", protocol=3
-        )
+        await self.require_build(context)
+        await self.require_build(context)
+        return history_pb2.StartHistoryReply(id=history_id_to_proto(HISTORY_ID))
 
     async def end_history(self, request, context):
+        await self.require_build(context)
         return history_pb2.EndHistoryReply(
             record_id=common_pb2.RecordId(uuid=common_pb2.Uuid(value=RECORD_ID.bytes)),
             record_idx=77,
-            version="18.23.0",
-            protocol=3,
         )
 
     async def tail_history(self, request, context):
+        await self.require_build(context)
         entry = history_pb2.HistoryEntry(
             timestamp=1_500_000_000,
             id=history_id_to_proto(HISTORY_ID),
@@ -54,13 +65,14 @@ class FakeDaemon:
         entry.exit = 0
         entry.duration = 12_000_000
         yield history_pb2.TailHistoryReply(ended=entry)
-        if self.protocol == 5:
-            yield history_pb2.TailHistoryReply(lagged=common_pb2.Lagged(dropped=4))
+        yield history_pb2.TailHistoryReply(lagged=common_pb2.Lagged(dropped=4))
 
     async def compact_store(self, request, context):
-        return history_pb2.CompactStoreReply(rewritten=12, version="18.24.0", protocol=5)
+        await self.require_build(context)
+        return history_pb2.CompactStoreReply(rewritten=12)
 
     async def get_command_output(self, request, context):
+        await self.require_build(context)
         self.output_requests.append(request)
         if self.output_missing:
             await context.abort(grpc.StatusCode.NOT_FOUND, "output not found")
@@ -79,6 +91,7 @@ class FakeDaemon:
         )
 
     async def search(self, requests, context):
+        await self.require_build(context)
         async for request in requests:
             yield search_pb2.SearchResponse(
                 query_id=request.query_id,
@@ -86,6 +99,7 @@ class FakeDaemon:
             )
 
     async def search_command_output(self, request, context):
+        await self.require_build(context)
         yield search_pb2.OutputSearchMatch(
             history_id=history_id_to_proto(HISTORY_ID),
             lines=[
@@ -190,8 +204,8 @@ class GrpcIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.tempdir.cleanup()
 
     async def _exercise(self, atuin: Atuin) -> None:
-        assert atuin.version == ("18.23.0" if self.daemon.protocol == 3 else "18.24.0")
-        assert atuin.protocol == self.daemon.protocol
+        assert atuin.version == "18.24.1"
+        assert atuin.protocol is None
         assert atuin.compatibility.compatible
 
         started = await atuin.history.start(
@@ -205,9 +219,8 @@ class GrpcIntegrationTests(unittest.IsolatedAsyncioTestCase):
         events = [event async for event in atuin.history.tail()]
         assert isinstance(events[0], HistoryStarted)
         assert isinstance(events[1], HistoryEnded)
-        if self.daemon.protocol == 5:
-            assert isinstance(events[2], HistoryLagged)
-            assert events[2].dropped == 4
+        assert isinstance(events[2], HistoryLagged)
+        assert events[2].dropped == 4
 
         output = await atuin.history.output(HISTORY_ID)
         assert output is not None
@@ -220,52 +233,49 @@ class GrpcIntegrationTests(unittest.IsolatedAsyncioTestCase):
         matches = [match async for match in atuin.search.output("captured")]
         assert matches[0].history_id == HISTORY_ID
         assert matches[0].lines[0].content.raw == "captured"
+        assert len(self.daemon.seen_builds) >= 6
+        assert set(self.daemon.seen_builds) == {"18.24.1"}
 
-    async def test_protocol3_over_tcp(self) -> None:
+    async def test_18_24_1_over_tcp(self) -> None:
         async with await Atuin.connect(tcp=f"127.0.0.1:{self.port}") as atuin:
             await self._exercise(atuin)
 
     @unittest.skipIf(os.name == "nt", "Unix-domain sockets are not available on Windows")
-    async def test_protocol3_over_unix_socket(self) -> None:
+    async def test_18_24_1_over_unix_socket(self) -> None:
         async with await Atuin.connect(socket=self.socket) as atuin:
             await self._exercise(atuin)
 
-    async def test_protocol5_over_tcp(self) -> None:
-        self.daemon.protocol = 5
-        async with await Atuin.connect(tcp=f"127.0.0.1:{self.port}") as atuin:
-            await self._exercise(atuin)
-
-    @unittest.skipIf(os.name == "nt", "Unix-domain sockets are not available on Windows")
-    async def test_protocol5_over_unix_socket(self) -> None:
-        self.daemon.protocol = 5
-        async with await Atuin.connect(socket=self.socket) as atuin:
-            await self._exercise(atuin)
-
-    async def test_compact_store_on_fake_protocol5_daemon(self) -> None:
-        self.daemon.protocol = 5
+    async def test_compact_store_on_fake_build_gated_daemon(self) -> None:
         async with await Atuin.connect(tcp=f"127.0.0.1:{self.port}") as atuin:
             result = await atuin.history.compact_store()
-            assert (result.rewritten, result.version, result.protocol) == (12, "18.24.0", 5)
+            assert (result.rewritten, result.version, result.protocol) == (12, None, None)
 
     async def test_output_not_found_maps_to_none_over_real_grpc(self) -> None:
         self.daemon.output_missing = True
         async with await Atuin.connect(tcp=f"127.0.0.1:{self.port}") as atuin:
             assert await atuin.history.output(HISTORY_ID) is None
 
-    async def test_incompatible_protocol_is_rejected_during_handshake(self) -> None:
-        self.daemon.protocol = 999
-        with pytest.raises(AtuinCompatibilityError, match="protocol 999"):
+    async def test_incompatible_daemon_build_is_rejected_by_server(self) -> None:
+        self.daemon.build = "18.24.1+different"
+        with pytest.raises(AtuinCompatibilityError, match="daemon is build"):
+            await Atuin.connect(tcp=f"127.0.0.1:{self.port}")
+
+    async def test_incompatible_status_version_is_rejected_by_client(self) -> None:
+        self.daemon.version = "18.24.2"
+        with pytest.raises(AtuinCompatibilityError, match="incompatible"):
             await Atuin.connect(tcp=f"127.0.0.1:{self.port}")
 
     async def test_compatibility_can_be_inspected_without_feature_guarantee(self) -> None:
-        self.daemon.protocol = 999
-        async with await Atuin.connect(tcp=f"127.0.0.1:{self.port}", check_compatibility=False) as atuin:
-            assert atuin.protocol == 999
+        self.daemon.version = "18.24.2"
+        async with await Atuin.connect(
+            tcp=f"127.0.0.1:{self.port}", check_compatibility=False
+        ) as atuin:
+            assert atuin.protocol is None
             assert not atuin.compatibility.compatible
 
     async def test_connect_context_manager_helper(self) -> None:
         async with connect(tcp=f"127.0.0.1:{self.port}") as atuin:
-            assert (await atuin.status()).protocol == 3
+            assert (await atuin.status()).protocol is None
 
 
 if __name__ == "__main__":

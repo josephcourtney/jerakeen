@@ -80,13 +80,13 @@ class FakeHistoryStub:
     async def Status(self, request, *, timeout=None):
         self.requests["status"] = request
         self.timeouts["status"] = timeout
-        return history_pb2.StatusReply(healthy=True, version="18.23.0", pid=42, protocol=3)
+        return history_pb2.StatusReply(healthy=True, version="18.24.1", pid=42)
 
     async def StartHistory(self, request, *, timeout=None):
         self.requests["start"] = request
         self.timeouts["start"] = timeout
         return history_pb2.StartHistoryReply(
-            id=history_id_to_proto(HISTORY_ID), version="18.23.0", protocol=3
+            id=history_id_to_proto(HISTORY_ID),
         )
 
     async def EndHistory(self, request, *, timeout=None):
@@ -95,30 +95,28 @@ class FakeHistoryStub:
         return history_pb2.EndHistoryReply(
             record_id=common_pb2.RecordId(uuid=common_pb2.Uuid(value=RECORD_ID.bytes)),
             record_idx=99,
-            version="18.23.0",
-            protocol=3,
         )
 
     async def CancelHistory(self, request, *, timeout=None):
         self.requests["cancel"] = request
         self.timeouts["cancel"] = timeout
-        return history_pb2.CancelHistoryReply(version="18.23.0", protocol=3)
+        return history_pb2.CancelHistoryReply()
 
     async def DeleteHistory(self, requests, *, timeout=None):
         self.timeouts["delete"] = timeout
         async for request in requests:
             self.delete_requests.append(request)
-        return history_pb2.DeleteHistoryReply(deleted=3, version="18.23.0", protocol=3)
+        return history_pb2.DeleteHistoryReply(deleted=3)
 
     async def RebuildHistory(self, request, *, timeout=None):
         self.requests["rebuild"] = request
         self.timeouts["rebuild"] = timeout
-        return history_pb2.RebuildHistoryReply(version="18.23.0", protocol=3)
+        return history_pb2.RebuildHistoryReply()
 
     async def CompactStore(self, request, *, timeout=None):
         self.requests["compact_store"] = request
         self.timeouts["compact_store"] = timeout
-        return history_pb2.CompactStoreReply(rewritten=12, version="18.24.0", protocol=5)
+        return history_pb2.CompactStoreReply(rewritten=12, )
 
     async def Shutdown(self, request, *, timeout=None):
         self.requests["shutdown"] = request
@@ -158,13 +156,13 @@ class HistoryTests(unittest.IsolatedAsyncioTestCase):
         status = await self.client.status()
         assert (status.healthy, status.version, status.pid, status.protocol) == (
             True,
-            "18.23.0",
+            "18.24.1",
             42,
-            3,
+            None,
         )
         assert self.stub.timeouts["status"] == 5.0
 
-    async def test_start_populates_protocol3_fields(self) -> None:
+    async def test_start_populates_history_fields(self) -> None:
         result = await self.client.start(
             "git status",
             cwd=Path("/tmp/repo"),
@@ -177,7 +175,7 @@ class HistoryTests(unittest.IsolatedAsyncioTestCase):
             timestamp_ns=123456789,
         )
         assert result.id == HISTORY_ID
-        assert (result.version, result.protocol) == ("18.23.0", 3)
+        assert (result.version, result.protocol) == (None, None)
         request = self.stub.requests["start"]
         assert isinstance(request, history_pb2.StartHistoryRequest)
         assert (
@@ -224,7 +222,7 @@ class HistoryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_cancel_delete_rebuild_compact_and_shutdown(self) -> None:
         cancelled = await self.client.cancel(HISTORY_ID)
-        assert (cancelled.version, cancelled.protocol) == ("18.23.0", 3)
+        assert (cancelled.version, cancelled.protocol) == (None, None)
 
         ids = [HISTORY_ID, UUID(int=2), UUID(int=3)]
         with patch("jerakeen.history._DELETE_CHUNK_SIZE", 2):
@@ -239,19 +237,19 @@ class HistoryTests(unittest.IsolatedAsyncioTestCase):
         assert decoded == ids
 
         rebuilt = await self.client.rebuild()
-        assert (rebuilt.version, rebuilt.protocol) == ("18.23.0", 3)
+        assert (rebuilt.version, rebuilt.protocol) == (None, None)
 
         compacted = await self.client.compact_store()
         assert (compacted.rewritten, compacted.version, compacted.protocol) == (
             12,
-            "18.24.0",
-            5,
+            None,
+            None,
         )
         assert isinstance(self.stub.requests["compact_store"], history_pb2.CompactStoreRequest)
         assert self.stub.timeouts["compact_store"] == 5.0
         assert await self.client.shutdown()
 
-    async def test_tail_preserves_all_protocol3_event_kinds(self) -> None:
+    async def test_tail_preserves_all_history_event_kinds(self) -> None:
         self.stub.tail_replies = [
             history_pb2.TailHistoryReply(started=history_entry()),
             history_pb2.TailHistoryReply(ended=history_entry(exit_code=5)),

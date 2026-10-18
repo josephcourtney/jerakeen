@@ -57,7 +57,7 @@ def test_common_uuid_and_range_contract() -> None:
     ]
 
 
-def test_history_service_and_protocol5_shapes() -> None:
+def test_history_service_and_build_gated_18_24_1_shapes() -> None:
     service = history_pb2.DESCRIPTOR.services_by_name["History"]
     assert rpc_shapes(service) == {
         "StartHistory": (False, False),
@@ -88,8 +88,12 @@ def test_history_service_and_protocol5_shapes() -> None:
 
     compact = messages["CompactStoreReply"].fields_by_name
     assert compact["rewritten"].number == 1
-    assert compact["version"].number == 2
-    assert compact["protocol"].number == 3
+    assert set(compact) == {"rewritten"}
+    assert set(messages["StatusReply"].fields_by_name) == {"healthy", "version", "pid"}
+    assert set(end_reply) == {"record_id", "record_idx"}
+    for reply_name in ("StartHistoryReply", "CancelHistoryReply", "DeleteHistoryReply", "RebuildHistoryReply"):
+        assert "version" not in messages[reply_name].fields_by_name
+        assert "protocol" not in messages[reply_name].fields_by_name
 
     tail_lagged = messages["TailHistoryReply"].fields_by_name["lagged"]
     assert tail_lagged.message_type.full_name == "common.Lagged"

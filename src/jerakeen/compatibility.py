@@ -8,26 +8,30 @@ from jerakeen.exceptions import AtuinCompatibilityError
 if TYPE_CHECKING:
     from jerakeen.models import DaemonStatus
 
-VENDORED_ATUIN_VERSION = "18.24.0"
-SUPPORTED_PROTOCOLS = (3, 5)
+VENDORED_ATUIN_VERSION = "18.24.1"
+# Numeric daemon protocol identifiers were removed in Atuin 18.24.1.
+SUPPORTED_PROTOCOLS: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
 class Compatibility:
-    """Compatibility assessment for the connected Atuin daemon."""
+    """Compatibility with the exact vendored Atuin build and proto snapshot."""
 
     daemon_version: str
-    daemon_protocol: int
+    daemon_protocol: int | None
     vendored_version: str = VENDORED_ATUIN_VERSION
     supported_protocols: tuple[int, ...] = SUPPORTED_PROTOCOLS
 
     @property
     def compatible(self) -> bool:
-        return self.daemon_protocol in self.supported_protocols
+        return self.daemon_version == self.vendored_version and self.daemon_protocol is None
 
     def require(self) -> None:
         if not self.compatible:
-            raise AtuinCompatibilityError(self.daemon_protocol, self.supported_protocols)
+            raise AtuinCompatibilityError(
+                f"Atuin daemon version {self.daemon_version!r} is incompatible with "
+                f"Jerakeen's {self.vendored_version!r} wire snapshot"
+            )
 
 
 def assess_compatibility(status: DaemonStatus) -> Compatibility:

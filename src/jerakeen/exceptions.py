@@ -28,15 +28,8 @@ class AtuinProtocolError(AtuinError):
 
 
 class AtuinCompatibilityError(AtuinProtocolError):
-    """The daemon protocol is outside the range supported by this jerakeen build."""
+    """The daemon build or wire contract differs from the supported snapshot."""
 
-    def __init__(self, protocol: int, supported: tuple[int, ...]) -> None:
-        self.protocol = protocol
-        self.supported = supported
-        supported_text = ", ".join(str(value) for value in supported)
-        super().__init__(
-            f"Atuin daemon protocol {protocol} is not supported; supported protocols: {supported_text}"
-        )
 
 
 class AtuinRpcError(AtuinError):
@@ -61,6 +54,10 @@ def from_grpc_error(exc: grpc.aio.AioRpcError) -> AtuinError:
             return AtuinUnsupportedError(details)
         case grpc.StatusCode.UNAVAILABLE:
             return AtuinConnectionError(details)
+        case grpc.StatusCode.FAILED_PRECONDITION if details.startswith("daemon is build "):
+            return AtuinCompatibilityError(
+                f"{details}; Jerakeen targets Atuin 18.24.1's exact build contract"
+            )
         case grpc.StatusCode.INTERNAL:
             return AtuinProtocolError(details)
         case _:
