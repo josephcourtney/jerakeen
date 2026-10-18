@@ -246,8 +246,10 @@ class GrpcIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_strict_build_gate_rejects_missing_local_build(self) -> None:
         self.daemon.require_build = True
-        with patch('jerakeen.client.local_atuin_build', return_value=None):
-            with pytest.raises(Exception, match='missing or wrong build'):
+        with (
+            patch('jerakeen.client.local_atuin_build', return_value=None),
+            pytest.raises(Exception, match='missing or wrong build'),
+        ):
                 await Atuin.connect(tcp=f'127.0.0.1:{self.port}')
     async def test_protocol3_over_tcp(self) -> None:
         async with await Atuin.connect(tcp=f"127.0.0.1:{self.port}") as atuin:
