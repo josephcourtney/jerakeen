@@ -19,6 +19,7 @@ def test_metadata_is_added_after_handshake() -> None:
         "/history.History/GetCommandOutput", 5, (("existing", "yes"),), None, None
     )
     updated = state.details(original)
+    assert updated.metadata is not None
     assert tuple(updated.metadata) == (("existing", "yes"), (BUILD_HEADER, "18.24.1"))
     assert updated.timeout == original.timeout
 
@@ -30,7 +31,9 @@ def test_existing_build_header_is_replaced() -> None:
         "/history.History/GetCommandOutput", None,
         ((BUILD_HEADER, "wrong"), ("existing", "yes")), None, None
     )
-    assert tuple(state.details(original).metadata) == (
+    updated = state.details(original)
+    assert updated.metadata is not None
+    assert tuple(updated.metadata) == (
         ("existing", "yes"), (BUILD_HEADER, "18.24.1")
     )
 
@@ -53,4 +56,5 @@ class InterceptorTests(unittest.IsolatedAsyncioTestCase):
         ):
             with self.subTest(method=method):
                 result = await getattr(interceptor, method)(continuation, details, object())
+                assert result.metadata is not None
                 assert tuple(result.metadata) == ((BUILD_HEADER, "18.24.1"),)
