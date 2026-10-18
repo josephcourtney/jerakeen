@@ -14,11 +14,11 @@ BUILD_HEADER = "x-atuin-build"
 VALIDATED_BUILD = "18.24.1"
 
 
-def local_atuin_build() -> str:
+def local_atuin_build() -> str | None:
     """Identify the installed executable build, not the daemon identity."""
     executable = shutil.which("atuin")
     if executable is None:
-        raise RuntimeError("atuin executable not found on PATH")
+        return None
     result = subprocess.run(
         [executable, "--version"], capture_output=True, text=True, check=True, timeout=5
     )
@@ -30,7 +30,7 @@ def local_atuin_build() -> str:
 
 
 class BuildMetadata:
-    """Connection-scoped build identity, populated after the ungated Status RPC."""
+    """Connection-scoped build identity established before any gated RPC."""
 
     def __init__(self, value: str | None = None) -> None:
         self.value = value
@@ -124,8 +124,12 @@ def create_channel(target: str, *, build: BuildMetadata | None = None) -> grpc.a
     # Atuin's tonic client uses http://atuin_local_daemon:0 as the logical
     # endpoint while transporting over the Unix socket. grpcio must send the
     # same HTTP/2 :authority or tonic/hyper can reset streaming RPCs.
+    if build is None:
+        return grpc.aio.insecure_channel(
+            target, options=(("grpc.default_authority", ATUIN_AUTHORITY),)
+        )
     return grpc.aio.insecure_channel(
         target,
         options=(("grpc.default_authority", ATUIN_AUTHORITY),),
-        **({"interceptors": [BuildInterceptor(build)]} if build is not None else {}),
+        interceptors=[BuildInterceptor(build)],
     )
