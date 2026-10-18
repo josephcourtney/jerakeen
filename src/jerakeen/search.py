@@ -112,9 +112,10 @@ class SearchSession:
     outstanding concurrently; responses are routed to the matching caller by ``query_id``.
     """
 
-    def __init__(self, stub: SearchStub, *, timeout: float | None = 5.0) -> None:
+    def __init__(self, stub: SearchStub, *, timeout: float | None = 5.0, build: str | None = None) -> None:
         self._stub = stub
         self._timeout = timeout
+        self._metadata = (("x-atuin-build", build),) if build else None
         self._queue: asyncio.Queue[search_pb2.SearchRequest | None] = asyncio.Queue()
         self._stream: AsyncIterable[search_pb2.SearchResponse] | None = None
         self._reader_task: asyncio.Task[None] | None = None
@@ -195,7 +196,7 @@ class SearchSession:
         self._queue = asyncio.Queue()
         self._pending.clear()
         self._expired.clear()
-        self._stream = self._stub.Search(self._requests())
+        self._stream = self._stub.Search(self._requests(), **({"metadata": self._metadata} if self._metadata else {}))
         self._active = True
         self._reader_task = asyncio.create_task(self._read_responses())
         return self
@@ -311,7 +312,7 @@ class SearchClient:
             yield _query_to_proto(request, default_query_id=expected_id)
 
         try:
-            async for reply in self._stub.Search(requests(), timeout=self._timeout):
+            async for reply in self._stub.Search(requests(), timeout=self._timeout, **({"metadata": self._metadata} if self._metadata else {})):
                 result = _result_from_proto(reply)
                 if result.query_id != expected_id:
                     msg = (
@@ -346,7 +347,7 @@ class SearchClient:
                 yield _query_to_proto(request)
 
         try:
-            async for reply in self._stub.Search(requests(), timeout=timeout):
+            async for reply in self._stub.Search(requests(), timeout=timeout, **({"metadata": self._metadata} if self._metadata else {})):
                 yield _result_from_proto(reply)
         except grpc.aio.AioRpcError as exc:
             raise from_grpc_error(exc) from exc
@@ -371,10 +372,10 @@ class SearchClient:
         if context is not None:
             request.context = context
         try:
-            async for reply in self._stub.SearchCommandOutput(request, timeout=timeout):
+            async for reply in self._stub.SearchCommandOutput(request, timeout=timeout, **({"metadata": self._metadata} if self._metadata else {})):
                 yield _output_match_from_proto(reply)
         except grpc.aio.AioRpcError as exc:
             raise from_grpc_error(exc) from exc
 
     def session(self) -> SearchSession:
-        return SearchSession(self._stub, timeout=self._timeout)
+        return SearchSession(self._stub, timeout=self._timeout, build=self._metadata[0][1] if self._metadata else None)
