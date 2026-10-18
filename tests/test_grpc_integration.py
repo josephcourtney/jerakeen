@@ -277,6 +277,7 @@ class GrpcIntegrationTests(unittest.IsolatedAsyncioTestCase):
             async with await Atuin.connect(tcp=f"127.0.0.1:{self.port}") as atuin:
                 assert atuin.version == "18.24.1"
                 assert atuin.protocol == 5
+
     async def test_strict_build_gate_rejects_missing_local_build(self) -> None:
         self.daemon.require_build = True
         with (

@@ -43,11 +43,7 @@ async def _handshake(
         raise from_grpc_error(exc) from exc
     metadata = await call.initial_metadata()
     raw_build = next((v for k, v in metadata if k == BUILD_HEADER), None)
-    advertised = (
-        raw_build.decode("ascii", errors="replace")
-        if isinstance(raw_build, bytes)
-        else raw_build
-    )
+    advertised = raw_build.decode("ascii", errors="replace") if isinstance(raw_build, bytes) else raw_build
     if (reply.version == VALIDATED_BUILD or supported_build(local_build)) and (
         not supported_build(advertised) or local_build != advertised
     ):
