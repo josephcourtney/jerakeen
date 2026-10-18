@@ -20,6 +20,29 @@ if TYPE_CHECKING:
 
 
 
+async def _handshake(
+    channel: grpc.aio.Channel, timeout: float | None, local_build: str | None
+) -> DaemonStatus:
+    # The Status request is gated by Atuin 18.24.1; its first request already
+    # carries the validated local executable build.
+    request = history_pb2.StatusRequest()
+    call = cast(
+        'grpc.aio.UnaryUnaryCall',
+        history_pb2_grpc.HistoryStub(channel).Status(request, timeout=timeout),
+    )
+    try:
+        reply = await call
+    except grpc.aio.AioRpcError as exc:
+        raise from_grpc_error(exc) from exc
+    metadata = await call.initial_metadata()
+    advertised = next((v for k, v in metadata if k == BUILD_HEADER), None)
+    if advertised is not None and (advertised != VALIDATED_BUILD or local_build != advertised):
+        msg = f'Unsupported Atuin build: daemon={advertised!r}, local={local_build!r}'
+        raise AtuinProtocolError(msg)
+    # The legacy protobuf decoder yields zero for the removed StatusReply.protocol.
+    protocol = 5 if advertised == VALIDATED_BUILD else reply.protocol
+    return DaemonStatus(reply.healthy, reply.version, reply.pid, protocol)
+
 class Atuin:
     """High-level async client for a local Atuin daemon."""
 
@@ -82,35 +105,13 @@ class Atuin:
 
         client = cls(channel, description=description, rpc_timeout=rpc_timeout)
         try:
-            # Status is gated too: the validated local build was stamped before this call.
-            request = history_pb2.StatusRequest()
-            status_call = cast(
-                'grpc.aio.UnaryUnaryCall',
-                history_pb2_grpc.HistoryStub(channel).Status(request, timeout=rpc_timeout),
-            )
-            try:
-                reply = await status_call
-            except grpc.aio.AioRpcError as exc:
-                raise from_grpc_error(exc) from exc
-            metadata = await status_call.initial_metadata()
-            advertised = next((v for k, v in metadata if k == BUILD_HEADER), None)
-            status = DaemonStatus(
-                healthy=reply.healthy, version=reply.version,
-                pid=reply.pid, protocol=reply.protocol,
-            )
-            if advertised is not None:
-                if advertised != VALIDATED_BUILD or local_build != advertised:
-                    msg = f'Unsupported Atuin build: daemon={advertised!r}, local={local_build!r}'
-                    raise AtuinProtocolError(msg)
-                # StatusReply.protocol was removed in 18.24.1.
-                status = DaemonStatus(status.healthy, status.version, status.pid, 5)
+            status = await _handshake(channel, rpc_timeout, local_build)
             compatibility = assess_compatibility(status)
             if check_compatibility:
                 compatibility.require()
         except BaseException:
             await client.close()
             raise
-
         client.history._version = status.version
         client.history._protocol = status.protocol
         client._status = status
