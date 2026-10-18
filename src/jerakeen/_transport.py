@@ -1,11 +1,89 @@
 from __future__ import annotations
 
 import os
+import re
+import shutil
+import subprocess  # ruff: ignore[suspicious-subprocess-import] - fixed executable, no shell
 from pathlib import Path
 
 import grpc
 
 ATUIN_AUTHORITY = "atuin_local_daemon:0"
+
+BUILD_HEADER = "x-atuin-build"
+VALIDATED_BUILD = "18.24.1"
+
+
+# A Git-checkout build is accepted only when both peers report the *same*
+# version and revision. A matching version prefix alone is insufficient.
+def supported_build(value: str | None) -> bool:
+    return (
+        value is not None
+        and re.fullmatch(rf"{re.escape(VALIDATED_BUILD)}(?:\+[0-9a-f]{{40}})?", value) is not None
+    )
+
+
+def local_atuin_build() -> str | None:
+    """Identify the installed executable build, not the daemon identity."""
+    executable = shutil.which("atuin")
+    if executable is None:
+        return None
+    result = subprocess.run(
+        [executable, "--version"],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=5,
+    )
+    match = re.fullmatch(r"atuin ([0-9]+\.[0-9]+\.[0-9]+) \(([^)]+)\)", result.stdout.strip())
+    if match is None:
+        msg = "Cannot determine local Atuin build"
+        raise RuntimeError(msg)
+    version, revision = match.groups()
+    return version if revision == "NO_GIT" else f"{version}+{revision}"
+
+
+class BuildMetadata:
+    """Connection-scoped build identity established before any gated RPC."""
+
+    def __init__(self, value: str | None = None) -> None:
+        self.value = value
+
+    def details(self, details: grpc.aio.ClientCallDetails) -> grpc.aio.ClientCallDetails:
+        if self.value is None:
+            return details
+        metadata = tuple((k, v) for k, v in (details.metadata or ()) if k != BUILD_HEADER)
+        return grpc.aio.ClientCallDetails(
+            details.method,
+            details.timeout,
+            (*metadata, (BUILD_HEADER, self.value)),
+            details.credentials,
+            details.wait_for_ready,
+        )
+
+
+class BuildInterceptor(
+    grpc.aio.UnaryUnaryClientInterceptor,
+    grpc.aio.UnaryStreamClientInterceptor,
+    grpc.aio.StreamUnaryClientInterceptor,
+    grpc.aio.StreamStreamClientInterceptor,
+):
+    """Stamp all four gRPC method shapes with the validated build."""
+
+    def __init__(self, state: BuildMetadata) -> None:
+        self.state = state
+
+    async def intercept_unary_unary(self, continuation, client_call_details, request):
+        return await continuation(self.state.details(client_call_details), request)
+
+    async def intercept_unary_stream(self, continuation, client_call_details, request):
+        return await continuation(self.state.details(client_call_details), request)
+
+    async def intercept_stream_unary(self, continuation, client_call_details, request_iterator):
+        return await continuation(self.state.details(client_call_details), request_iterator)
+
+    async def intercept_stream_stream(self, continuation, client_call_details, request_iterator):
+        return await continuation(self.state.details(client_call_details), request_iterator)
 
 
 def unix_socket_candidates() -> list[Path]:
@@ -55,11 +133,14 @@ def discover_target(
     raise FileNotFoundError(msg)
 
 
-def create_channel(target: str) -> grpc.aio.Channel:
+def create_channel(target: str, *, build: BuildMetadata | None = None) -> grpc.aio.Channel:
     # Atuin's tonic client uses http://atuin_local_daemon:0 as the logical
     # endpoint while transporting over the Unix socket. grpcio must send the
     # same HTTP/2 :authority or tonic/hyper can reset streaming RPCs.
+    if build is None:
+        return grpc.aio.insecure_channel(target, options=(("grpc.default_authority", ATUIN_AUTHORITY),))
     return grpc.aio.insecure_channel(
         target,
         options=(("grpc.default_authority", ATUIN_AUTHORITY),),
+        interceptors=[BuildInterceptor(build)],
     )

@@ -102,7 +102,7 @@
       "src/jerakeen/__init__.py"   = ["RUF067"] # Package version resolution is intentional import-time API metadata.
       "src/jerakeen/_ids.py"      = ["PLR2004"] # UUID wire width is fixed by the daemon protocol at 16 bytes.
       "src/jerakeen/_interfaces.py" = ["N802"]
-      "src/jerakeen/_transport.py" = ["S108"] # `/tmp/atuin-$UID/atuin.sock` is an Atuin discovery location, not a temp-file creation.
+      "src/jerakeen/_transport.py" = ["S108", "S603"] # `/tmp/atuin-$UID/atuin.sock` is an Atuin discovery location, not a temp-file creation.
       "src/jerakeen/client.py"     = ["ASYNC109"] # Public timeout values are forwarded to gRPC/channel deadlines.
       "src/jerakeen/history.py"    = ["ASYNC109", "RUF029"] # Streaming RPC adapters must preserve async iterable/signature shapes.
       "src/jerakeen/search.py"     = [

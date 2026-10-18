@@ -2,22 +2,59 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING, Self
+from typing import TYPE_CHECKING, Self, cast
 
-from jerakeen._proto import history_pb2_grpc, search_pb2_grpc
-from jerakeen._transport import create_channel, discover_target
+import grpc
+
+from jerakeen._proto import history_pb2, history_pb2_grpc, search_pb2_grpc
+from jerakeen._transport import (
+    BUILD_HEADER,
+    VALIDATED_BUILD,
+    BuildMetadata,
+    create_channel,
+    discover_target,
+    local_atuin_build,
+    supported_build,
+)
 from jerakeen.compatibility import Compatibility, assess_compatibility
-from jerakeen.exceptions import AtuinConnectionError
+from jerakeen.exceptions import AtuinConnectionError, AtuinProtocolError, from_grpc_error
 from jerakeen.history import HistoryClient
+from jerakeen.models import DaemonStatus
 from jerakeen.search import SearchClient
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
     from pathlib import Path
 
-    import grpc
 
-    from jerakeen.models import DaemonStatus
+async def _handshake(
+    channel: grpc.aio.Channel, timeout: float | None, local_build: str | None
+) -> DaemonStatus:
+    # The Status request is gated by Atuin 18.24.1; its first request already
+    # carries the validated local executable build.
+    request = history_pb2.StatusRequest()
+    call = cast(
+        "grpc.aio.UnaryUnaryCall",
+        history_pb2_grpc.HistoryStub(channel).Status(request, timeout=timeout),
+    )
+    try:
+        reply = await call
+    except grpc.aio.AioRpcError as exc:
+        raise from_grpc_error(exc) from exc
+    metadata = await call.initial_metadata()
+    raw_build = next((v for k, v in metadata if k == BUILD_HEADER), None)
+    advertised = raw_build.decode("ascii", errors="replace") if isinstance(raw_build, bytes) else raw_build
+    if (reply.version == VALIDATED_BUILD or supported_build(local_build)) and (
+        not supported_build(advertised) or local_build != advertised
+    ):
+        msg = f"Unsupported or missing Atuin build: daemon={advertised!r}, local={local_build!r}"
+        raise AtuinProtocolError(msg)
+    if advertised is not None and not supported_build(advertised):
+        msg = f"Unsupported Atuin build: daemon={advertised!r}"
+        raise AtuinProtocolError(msg)
+    # The legacy protobuf decoder yields zero for the removed StatusReply.protocol.
+    protocol = 5 if supported_build(advertised) else reply.protocol
+    return DaemonStatus(reply.healthy, reply.version, reply.pid, protocol)
 
 
 class Atuin:
@@ -70,7 +107,9 @@ class Atuin:
         check_compatibility: bool = True,
     ) -> Atuin:
         target, description = discover_target(socket, tcp)
-        channel = create_channel(target)
+        local_build = local_atuin_build()
+        build = BuildMetadata(local_build if supported_build(local_build) else None)
+        channel = create_channel(target, build=build)
         try:
             await asyncio.wait_for(channel.channel_ready(), timeout=timeout)
         except TimeoutError as exc:
@@ -80,14 +119,19 @@ class Atuin:
 
         client = cls(channel, description=description, rpc_timeout=rpc_timeout)
         try:
-            status = await client.history.status()
+            status = await _handshake(channel, rpc_timeout, local_build)
             compatibility = assess_compatibility(status)
             if check_compatibility:
                 compatibility.require()
         except BaseException:
             await client.close()
             raise
-
+        client.search = SearchClient(
+            search_pb2_grpc.SearchStub(channel),
+            timeout=rpc_timeout,
+            build=local_build if local_build == VALIDATED_BUILD else None,
+        )
+        client.history.set_daemon_identity(status.version, status.protocol)
         client._status = status
         client._compatibility = compatibility
         return client
