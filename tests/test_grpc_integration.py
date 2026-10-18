@@ -191,6 +191,10 @@ def add_services(server: grpc.aio.Server, daemon: FakeDaemon) -> None:
 
 class GrpcIntegrationTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
+        # Legacy fake daemons should not depend on the installed Atuin executable.
+        self._local_build_patch = patch("jerakeen.client.local_atuin_build", return_value=None)
+        self._local_build_patch.start()
+        self.addCleanup(self._local_build_patch.stop)
         self.daemon = FakeDaemon()
         self.server = grpc.aio.server()
         add_services(self.server, self.daemon)
@@ -261,7 +265,7 @@ class GrpcIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.daemon.advertised_build = "18.24.1+" + "a" * 40
         with (
             patch("jerakeen.client.local_atuin_build", return_value="18.24.1+" + "b" * 40),
-            pytest.raises(Exception, match="Unsupported or missing Atuin build"),
+            pytest.raises(Exception, match="FAILED_PRECONDITION: missing or wrong build"),
         ):
             await Atuin.connect(tcp=f"127.0.0.1:{self.port}")
 
