@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from uuid import UUID
+from unittest.mock import patch
 
 import grpc
 import pytest
@@ -20,12 +21,22 @@ RECORD_ID = UUID("ffeeddcc-bbaa-9988-7766-554433221100")
 class FakeDaemon:
     def __init__(self) -> None:
         self.protocol = 3
+        self.require_build = False
         self.output_missing = False
         self.output_requests: list[history_pb2.GetCommandOutputRequest] = []
 
     async def status(self, request, context):
+        if self.require_build:
+            await self._require_build(context)
+            return history_pb2.StatusReply(healthy=True, version="18.24.1", pid=123)
         version = "18.23.0" if self.protocol == 3 else "18.24.0"
         return history_pb2.StatusReply(healthy=True, version=version, pid=123, protocol=self.protocol)
+
+    async def _require_build(self, context):
+        metadata = dict(context.invocation_metadata())
+        if metadata.get("x-atuin-build") != "18.24.1":
+            await context.abort(grpc.StatusCode.FAILED_PRECONDITION, "missing or wrong build")
+        await context.send_initial_metadata((("x-atuin-build", "18.24.1"),))
 
     async def start_history(self, request, context):
         return history_pb2.StartHistoryReply(
@@ -61,6 +72,8 @@ class FakeDaemon:
         return history_pb2.CompactStoreReply(rewritten=12, version="18.24.0", protocol=5)
 
     async def get_command_output(self, request, context):
+        if self.require_build:
+            await self._require_build(context)
         self.output_requests.append(request)
         if self.output_missing:
             await context.abort(grpc.StatusCode.NOT_FOUND, "output not found")
@@ -221,6 +234,21 @@ class GrpcIntegrationTests(unittest.IsolatedAsyncioTestCase):
         assert matches[0].history_id == HISTORY_ID
         assert matches[0].lines[0].content.raw == "captured"
 
+    async def test_strict_build_gate_accepts_first_status_and_captured_output(self) -> None:
+        self.daemon.require_build = True
+        with patch('jerakeen.client.local_atuin_build', return_value='18.24.1'):
+            async with await Atuin.connect(tcp=f'127.0.0.1:{self.port}') as atuin:
+                assert atuin.version == '18.24.1'
+                assert atuin.protocol == 5
+                output = await atuin.history.output(HISTORY_ID)
+                assert output is not None
+                assert output.text == 'captured'
+
+    async def test_strict_build_gate_rejects_missing_local_build(self) -> None:
+        self.daemon.require_build = True
+        with patch('jerakeen.client.local_atuin_build', return_value=None):
+            with pytest.raises(Exception, match='missing or wrong build'):
+                await Atuin.connect(tcp=f'127.0.0.1:{self.port}')
     async def test_protocol3_over_tcp(self) -> None:
         async with await Atuin.connect(tcp=f"127.0.0.1:{self.port}") as atuin:
             await self._exercise(atuin)
