@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
-import subprocess
+import subprocess  # noqa: S404 - fixed executable, no shell
 from pathlib import Path
 
 import grpc
@@ -20,7 +20,7 @@ def local_atuin_build() -> str | None:
     if executable is None:
         return None
     result = subprocess.run(
-        [executable, "--version"], capture_output=True, text=True, check=True, timeout=5
+        [executable, "--version"], capture_output=True, text=True, check=True, timeout=5  # noqa: S603
     )
     match = re.fullmatch(r"atuin ([0-9]+\.[0-9]+\.[0-9]+) \(([^)]+)\)", result.stdout.strip())
     if match is None:
