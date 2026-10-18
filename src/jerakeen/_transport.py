@@ -14,6 +14,14 @@ BUILD_HEADER = "x-atuin-build"
 VALIDATED_BUILD = "18.24.1"
 
 
+# A Git-checkout build is accepted only when both peers report the *same*
+# version and revision. A matching version prefix alone is insufficient.
+def supported_build(value: str | None) -> bool:
+    return value is not None and re.fullmatch(
+        rf"{re.escape(VALIDATED_BUILD)}(?:\+[0-9a-f]{{40}})?", value
+    ) is not None
+
+
 def local_atuin_build() -> str | None:
     """Identify the installed executable build, not the daemon identity."""
     executable = shutil.which("atuin")
