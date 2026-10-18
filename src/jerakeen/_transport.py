@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import os
+import re
+import shutil
+import subprocess
 from pathlib import Path
 
 import grpc
@@ -8,13 +11,29 @@ import grpc
 ATUIN_AUTHORITY = "atuin_local_daemon:0"
 
 BUILD_HEADER = "x-atuin-build"
+VALIDATED_BUILD = "18.24.1"
+
+
+def local_atuin_build() -> str:
+    """Identify the installed executable build, not the daemon identity."""
+    executable = shutil.which("atuin")
+    if executable is None:
+        raise RuntimeError("atuin executable not found on PATH")
+    result = subprocess.run(
+        [executable, "--version"], capture_output=True, text=True, check=True, timeout=5
+    )
+    match = re.fullmatch(r"atuin ([0-9]+\.[0-9]+\.[0-9]+) \(([^)]+)\)", result.stdout.strip())
+    if match is None:
+        raise RuntimeError("Cannot determine local Atuin build")
+    version, revision = match.groups()
+    return version if revision == "NO_GIT" else f"{version}+{revision}"
 
 
 class BuildMetadata:
     """Connection-scoped build identity, populated after the ungated Status RPC."""
 
-    def __init__(self) -> None:
-        self.value: str | None = None
+    def __init__(self, value: str | None = None) -> None:
+        self.value = value
 
     def details(self, details: grpc.aio.ClientCallDetails) -> grpc.aio.ClientCallDetails:
         if self.value is None:
@@ -40,17 +59,17 @@ class BuildInterceptor(
     def __init__(self, state: BuildMetadata) -> None:
         self.state = state
 
-    async def intercept_unary_unary(self, continuation, details, request):
-        return await continuation(self.state.details(details), request)
+    async def intercept_unary_unary(self, continuation, client_call_details, request):
+        return await continuation(self.state.details(client_call_details), request)
 
-    async def intercept_unary_stream(self, continuation, details, request):
-        return await continuation(self.state.details(details), request)
+    async def intercept_unary_stream(self, continuation, client_call_details, request):
+        return await continuation(self.state.details(client_call_details), request)
 
-    async def intercept_stream_unary(self, continuation, details, iterator):
-        return await continuation(self.state.details(details), iterator)
+    async def intercept_stream_unary(self, continuation, client_call_details, request_iterator):
+        return await continuation(self.state.details(client_call_details), request_iterator)
 
-    async def intercept_stream_stream(self, continuation, details, iterator):
-        return await continuation(self.state.details(details), iterator)
+    async def intercept_stream_stream(self, continuation, client_call_details, request_iterator):
+        return await continuation(self.state.details(client_call_details), request_iterator)
 
 
 
