@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Self
 
 from jerakeen._proto import history_pb2, history_pb2_grpc, search_pb2_grpc
-from jerakeen._transport import BUILD_HEADER, BuildMetadata, create_channel, discover_target
+from jerakeen._transport import BUILD_HEADER, VALIDATED_BUILD, BuildMetadata, create_channel, discover_target, local_atuin_build
 from jerakeen.compatibility import Compatibility, assess_compatibility
 from jerakeen.exceptions import AtuinConnectionError, AtuinProtocolError, from_grpc_error
 from jerakeen.history import HistoryClient
@@ -73,7 +73,12 @@ class Atuin:
         check_compatibility: bool = True,
     ) -> Atuin:
         target, description = discover_target(socket, tcp)
-        build = BuildMetadata()
+        local_build = local_atuin_build()
+        if local_build != VALIDATED_BUILD:
+            raise AtuinProtocolError(
+                f'Local Atuin build {local_build!r} is not validated; expected {VALIDATED_BUILD}'
+            )
+        build = BuildMetadata(local_build)
         channel = create_channel(target, build=build)
         try:
             await asyncio.wait_for(channel.channel_ready(), timeout=timeout)
@@ -99,16 +104,16 @@ class Atuin:
                 healthy=reply.healthy, version=reply.version,
                 pid=reply.pid, protocol=reply.protocol,
             )
+            # Atuin 18.24.1 removed StatusReply.protocol; build validation
+            # supersedes its previous integer protocol negotiation.
+            status = DaemonStatus(status.healthy, status.version, status.pid, 5)
             compatibility = assess_compatibility(status)
             if check_compatibility:
                 compatibility.require()
-            if advertised is not None:
-                # Never echo arbitrary daemon builds. Only audited builds may pass.
-                if advertised not in ():
-                    raise AtuinProtocolError(
-                        f'Unvalidated Atuin build {advertised!r}; refusing gated RPCs'
-                    )
-                build.value = advertised
+            if advertised != local_build:
+                raise AtuinProtocolError(
+                    f'Atuin daemon build {advertised!r} differs from client build {local_build!r}'
+                )
         except BaseException:
             await client.close()
             raise
