@@ -22,6 +22,8 @@ class FakeDaemon:
     def __init__(self) -> None:
         self.protocol = 3
         self.require_build = False
+        self.advertised_build = "18.24.1"
+        self.omit_build_header = False
         self.output_missing = False
         self.output_requests: list[history_pb2.GetCommandOutputRequest] = []
 
@@ -34,9 +36,10 @@ class FakeDaemon:
 
     async def _require_build(self, context):
         metadata = dict(context.invocation_metadata())
-        if metadata.get("x-atuin-build") != "18.24.1":
+        if metadata.get("x-atuin-build") != self.advertised_build:
             await context.abort(grpc.StatusCode.FAILED_PRECONDITION, "missing or wrong build")
-        await context.send_initial_metadata((("x-atuin-build", "18.24.1"),))
+        if not self.omit_build_header:
+            await context.send_initial_metadata((("x-atuin-build", self.advertised_build),))
 
     async def start_history(self, request, context):
         return history_pb2.StartHistoryReply(
@@ -244,6 +247,32 @@ class GrpcIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 assert output is not None
                 assert output.text == "captured"
 
+    async def test_strict_build_gate_rejects_missing_response_header(self) -> None:
+        self.daemon.require_build = True
+        self.daemon.omit_build_header = True
+        with (
+            patch("jerakeen.client.local_atuin_build", return_value="18.24.1"),
+            pytest.raises(Exception, match="missing Atuin build"),
+        ):
+            await Atuin.connect(tcp=f"127.0.0.1:{self.port}")
+
+    async def test_strict_build_gate_rejects_different_revision(self) -> None:
+        self.daemon.require_build = True
+        self.daemon.advertised_build = "18.24.1+" + "a" * 40
+        with (
+            patch("jerakeen.client.local_atuin_build", return_value="18.24.1+" + "b" * 40),
+            pytest.raises(Exception, match="Unsupported or missing Atuin build"),
+        ):
+            await Atuin.connect(tcp=f"127.0.0.1:{self.port}")
+
+    async def test_strict_build_gate_accepts_exact_revision(self) -> None:
+        self.daemon.require_build = True
+        revision = "18.24.1+" + "a" * 40
+        self.daemon.advertised_build = revision
+        with patch("jerakeen.client.local_atuin_build", return_value=revision):
+            async with await Atuin.connect(tcp=f"127.0.0.1:{self.port}") as atuin:
+                assert atuin.version == "18.24.1"
+                assert atuin.protocol == 5
     async def test_strict_build_gate_rejects_missing_local_build(self) -> None:
         self.daemon.require_build = True
         with (
