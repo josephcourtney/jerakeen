@@ -155,6 +155,10 @@ class HistoryClient:
         self._version = ""
         self._protocol = 0
 
+    def set_daemon_identity(self, version: str, protocol: int) -> None:
+        self._version = version
+        self._protocol = protocol
+
     async def status(self) -> DaemonStatus:
         reply = await call(self._stub.Status(history_pb2.StatusRequest(), timeout=self._timeout))
         return DaemonStatus(
