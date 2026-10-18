@@ -4,7 +4,7 @@ import unittest
 
 import grpc
 
-from jerakeen._transport import BUILD_HEADER, BuildInterceptor, BuildMetadata
+from jerakeen._transport import BUILD_HEADER, BuildInterceptor, BuildMetadata, supported_build
 
 
 def test_metadata_is_absent_before_handshake() -> None:
@@ -56,3 +56,10 @@ class InterceptorTests(unittest.IsolatedAsyncioTestCase):
                 result = await getattr(interceptor, method)(continuation, details, object())
                 assert result.metadata is not None
                 assert tuple(result.metadata) == ((BUILD_HEADER, "18.24.1"),)
+
+
+def test_supported_build_identifiers() -> None:
+    assert supported_build("18.24.1")
+    assert supported_build("18.24.1+" + "a" * 40)
+    for value in (None, "", "18.24.0", "18.24.2", "18.24.1+bad", "18.24.1+" + "x" * 40):
+        assert not supported_build(value)
