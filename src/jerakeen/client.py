@@ -14,6 +14,7 @@ from jerakeen._transport import (
     create_channel,
     discover_target,
     local_atuin_build,
+    supported_build,
 )
 from jerakeen.compatibility import Compatibility, assess_compatibility
 from jerakeen.exceptions import AtuinConnectionError, AtuinProtocolError, from_grpc_error
@@ -42,11 +43,16 @@ async def _handshake(
         raise from_grpc_error(exc) from exc
     metadata = await call.initial_metadata()
     advertised = next((v for k, v in metadata if k == BUILD_HEADER), None)
-    if advertised is not None and (advertised != VALIDATED_BUILD or local_build != advertised):
-        msg = f"Unsupported Atuin build: daemon={advertised!r}, local={local_build!r}"
+    if (reply.version == VALIDATED_BUILD or supported_build(local_build)) and (
+        not supported_build(advertised) or local_build != advertised
+    ):
+        msg = f"Unsupported or missing Atuin build: daemon={advertised!r}, local={local_build!r}"
+        raise AtuinProtocolError(msg)
+    if advertised is not None and not supported_build(advertised):
+        msg = f"Unsupported Atuin build: daemon={advertised!r}"
         raise AtuinProtocolError(msg)
     # The legacy protobuf decoder yields zero for the removed StatusReply.protocol.
-    protocol = 5 if advertised == VALIDATED_BUILD else reply.protocol
+    protocol = 5 if supported_build(advertised) else reply.protocol
     return DaemonStatus(reply.healthy, reply.version, reply.pid, protocol)
 
 
@@ -101,7 +107,7 @@ class Atuin:
     ) -> Atuin:
         target, description = discover_target(socket, tcp)
         local_build = local_atuin_build()
-        build = BuildMetadata(local_build if local_build == VALIDATED_BUILD else None)
+        build = BuildMetadata(local_build if supported_build(local_build) else None)
         channel = create_channel(target, build=build)
         try:
             await asyncio.wait_for(channel.channel_ready(), timeout=timeout)
