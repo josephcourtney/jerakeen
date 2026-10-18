@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
-import subprocess  # noqa: S404 - fixed executable, no shell
+import subprocess  # ruff: ignore[suspicious-subprocess-import] - fixed executable, no shell
 from pathlib import Path
 
 import grpc
@@ -20,11 +20,16 @@ def local_atuin_build() -> str | None:
     if executable is None:
         return None
     result = subprocess.run(
-        [executable, "--version"], capture_output=True, text=True, check=True, timeout=5  # noqa: S603
+        [executable, "--version"],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=5,
     )
     match = re.fullmatch(r"atuin ([0-9]+\.[0-9]+\.[0-9]+) \(([^)]+)\)", result.stdout.strip())
     if match is None:
-        raise RuntimeError("Cannot determine local Atuin build")
+        msg = "Cannot determine local Atuin build"
+        raise RuntimeError(msg)
     version, revision = match.groups()
     return version if revision == "NO_GIT" else f"{version}+{revision}"
 
@@ -70,7 +75,6 @@ class BuildInterceptor(
 
     async def intercept_stream_stream(self, continuation, client_call_details, request_iterator):
         return await continuation(self.state.details(client_call_details), request_iterator)
-
 
 
 def unix_socket_candidates() -> list[Path]:
@@ -125,9 +129,7 @@ def create_channel(target: str, *, build: BuildMetadata | None = None) -> grpc.a
     # endpoint while transporting over the Unix socket. grpcio must send the
     # same HTTP/2 :authority or tonic/hyper can reset streaming RPCs.
     if build is None:
-        return grpc.aio.insecure_channel(
-            target, options=(("grpc.default_authority", ATUIN_AUTHORITY),)
-        )
+        return grpc.aio.insecure_channel(target, options=(("grpc.default_authority", ATUIN_AUTHORITY),))
     return grpc.aio.insecure_channel(
         target,
         options=(("grpc.default_authority", ATUIN_AUTHORITY),),

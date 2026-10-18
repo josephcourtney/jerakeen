@@ -7,7 +7,14 @@ from typing import TYPE_CHECKING, Self, cast
 import grpc
 
 from jerakeen._proto import history_pb2, history_pb2_grpc, search_pb2_grpc
-from jerakeen._transport import BUILD_HEADER, VALIDATED_BUILD, BuildMetadata, create_channel, discover_target, local_atuin_build
+from jerakeen._transport import (
+    BUILD_HEADER,
+    VALIDATED_BUILD,
+    BuildMetadata,
+    create_channel,
+    discover_target,
+    local_atuin_build,
+)
 from jerakeen.compatibility import Compatibility, assess_compatibility
 from jerakeen.exceptions import AtuinConnectionError, AtuinProtocolError, from_grpc_error
 from jerakeen.history import HistoryClient
@@ -36,7 +43,7 @@ async def _handshake(
     metadata = await call.initial_metadata()
     advertised = next((v for k, v in metadata if k == BUILD_HEADER), None)
     if advertised is not None and (advertised != VALIDATED_BUILD or local_build != advertised):
-        msg = f'Unsupported Atuin build: daemon={advertised!r}, local={local_build!r}'
+        msg = f"Unsupported Atuin build: daemon={advertised!r}, local={local_build!r}"
         raise AtuinProtocolError(msg)
     # The legacy protobuf decoder yields zero for the removed StatusReply.protocol.
     protocol = 5 if advertised == VALIDATED_BUILD else reply.protocol
@@ -113,7 +120,8 @@ class Atuin:
             await client.close()
             raise
         client.search = SearchClient(
-            search_pb2_grpc.SearchStub(channel), timeout=rpc_timeout,
+            search_pb2_grpc.SearchStub(channel),
+            timeout=rpc_timeout,
             build=local_build if local_build == VALIDATED_BUILD else None,
         )
         client.history.set_daemon_identity(status.version, status.protocol)

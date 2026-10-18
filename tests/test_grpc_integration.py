@@ -4,8 +4,8 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
-from uuid import UUID
 from unittest.mock import patch
+from uuid import UUID
 
 import grpc
 import pytest
@@ -236,21 +236,22 @@ class GrpcIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_strict_build_gate_accepts_first_status_and_captured_output(self) -> None:
         self.daemon.require_build = True
-        with patch('jerakeen.client.local_atuin_build', return_value='18.24.1'):
-            async with await Atuin.connect(tcp=f'127.0.0.1:{self.port}') as atuin:
-                assert atuin.version == '18.24.1'
+        with patch("jerakeen.client.local_atuin_build", return_value="18.24.1"):
+            async with await Atuin.connect(tcp=f"127.0.0.1:{self.port}") as atuin:
+                assert atuin.version == "18.24.1"
                 assert atuin.protocol == 5
                 output = await atuin.history.output(HISTORY_ID)
                 assert output is not None
-                assert output.text == 'captured'
+                assert output.text == "captured"
 
     async def test_strict_build_gate_rejects_missing_local_build(self) -> None:
         self.daemon.require_build = True
         with (
-            patch('jerakeen.client.local_atuin_build', return_value=None),
-            pytest.raises(Exception, match='missing or wrong build'),
+            patch("jerakeen.client.local_atuin_build", return_value=None),
+            pytest.raises(Exception, match="missing or wrong build"),
         ):
-                await Atuin.connect(tcp=f'127.0.0.1:{self.port}')
+            await Atuin.connect(tcp=f"127.0.0.1:{self.port}")
+
     async def test_protocol3_over_tcp(self) -> None:
         async with await Atuin.connect(tcp=f"127.0.0.1:{self.port}") as atuin:
             await self._exercise(atuin)

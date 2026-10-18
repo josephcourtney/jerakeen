@@ -230,7 +230,9 @@ class HistoryClient:
                 timeout=self._timeout,
             )
         )
-        return HistoryCancel(version=reply.version or self._version, protocol=reply.protocol or self._protocol)
+        return HistoryCancel(
+            version=reply.version or self._version, protocol=reply.protocol or self._protocol
+        )
 
     async def delete(self, history_ids: Iterable[UUID | str]) -> HistoryDelete:
         async def requests() -> AsyncIterator[history_pb2.DeleteHistoryRequest]:
@@ -244,19 +246,23 @@ class HistoryClient:
                 yield history_pb2.DeleteHistoryRequest(ids=chunk)
 
         reply = await call(self._stub.DeleteHistory(requests(), timeout=self._timeout))
-        return HistoryDelete(deleted=reply.deleted, version=reply.version or self._version, protocol=reply.protocol or self._protocol)
+        return HistoryDelete(
+            deleted=reply.deleted,
+            version=reply.version or self._version,
+            protocol=reply.protocol or self._protocol,
+        )
 
     async def rebuild(self) -> HistoryRebuild:
         reply = await call(
             self._stub.RebuildHistory(history_pb2.RebuildHistoryRequest(), timeout=self._timeout)
         )
-        return HistoryRebuild(version=reply.version or self._version, protocol=reply.protocol or self._protocol)
+        return HistoryRebuild(
+            version=reply.version or self._version, protocol=reply.protocol or self._protocol
+        )
 
     async def compact_store(self) -> HistoryCompactStore:
         """Compact the daemon's persistent record store (mutating operation)."""
-        reply = await call(
-            self._stub.CompactStore(history_pb2.CompactStoreRequest(), timeout=self._timeout)
-        )
+        reply = await call(self._stub.CompactStore(history_pb2.CompactStoreRequest(), timeout=self._timeout))
         return HistoryCompactStore(
             rewritten=reply.rewritten,
             version=reply.version or self._version,

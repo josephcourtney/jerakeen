@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import grpc
 import unittest
+
+import grpc
 
 from jerakeen._transport import BUILD_HEADER, BuildInterceptor, BuildMetadata
 
@@ -28,14 +29,11 @@ def test_existing_build_header_is_replaced() -> None:
     state = BuildMetadata()
     state.value = "18.24.1"
     original = grpc.aio.ClientCallDetails(
-        "/history.History/GetCommandOutput", None,
-        ((BUILD_HEADER, "wrong"), ("existing", "yes")), None, None
+        "/history.History/GetCommandOutput", None, ((BUILD_HEADER, "wrong"), ("existing", "yes")), None, None
     )
     updated = state.details(original)
     assert updated.metadata is not None
-    assert tuple(updated.metadata) == (
-        ("existing", "yes"), (BUILD_HEADER, "18.24.1")
-    )
+    assert tuple(updated.metadata) == (("existing", "yes"), (BUILD_HEADER, "18.24.1"))
 
 
 class InterceptorTests(unittest.IsolatedAsyncioTestCase):
